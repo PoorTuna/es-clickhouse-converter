@@ -1,0 +1,15 @@
+{
+  "engine": "MergeTree",
+  "timestamp_field": "@timestamp",
+  "order_by": ["service.name", "@timestamp"],
+  "partition_by": "toYYYYMM(`@timestamp`)",
+  "json_fields": ["labels"],
+  "type_overrides": { "status_code": "UInt16" },
+  "codec_overrides": { "bytes_total": "Delta, ZSTD(3)" },
+  "low_cardinality": ["service.name", "level"],
+  "counter_fields": ["bytes_total"],
+  "indexes": [
+    { "name": "msg_tok", "expr": "message", "type": "tokenbf_v1(30720, 3, 0)", "granularity": 4 }
+  ],
+  "materialized": { "status_class": "intDiv(status_code, 100)" }
+}

@@ -1,0 +1,18 @@
+services:
+  converter:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      LOG_LEVEL: INFO
+
+  # Optional local ClickHouse for dry-running generated DDL.
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.8
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
