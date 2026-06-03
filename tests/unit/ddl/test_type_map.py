@@ -19,7 +19,7 @@ class TestMapScalar:
             ("double", "Float64"),
             ("float", "Float32"),
             ("boolean", "UInt8"),
-            ("ip", "Array(Variant(IPv4, IPv6))"),
+            ("ip", "IPv6"),
         ],
     )
     def test_known_types_have_no_warning(self, es_type, ch_type):

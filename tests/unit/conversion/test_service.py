@@ -60,9 +60,8 @@ class TestConvertIndex:
         assert "`service_name` LowCardinality(String)" not in artifacts.ddl
         assert "`service_name` String" in artifacts.ddl
 
-    def test_ip_array_is_not_wrapped_in_nullable(self, artifacts):
-        assert "`client_ip` Array(Variant(IPv4, IPv6))" in artifacts.ddl
-        assert "Nullable(Array" not in artifacts.ddl
+    def test_ip_maps_to_ipv6(self, artifacts):
+        assert "`client_ip` Nullable(IPv6)" in artifacts.ddl
 
     def test_dynamic_and_disabled_subtrees_become_json(self, artifacts):
         assert "`labels` JSON" in artifacts.ddl
@@ -85,7 +84,19 @@ class TestConvertIndex:
 
     def test_promoted_index_is_live_not_suggested(self, artifacts):
         assert "INDEX `msg_tok` message TYPE tokenbf_v1(30720, 3, 0)" in artifacts.ddl
-        assert not any("message" in s for s in artifacts.suggestions)
+        assert not any("token skip index" in s and "message" in s for s in artifacts.suggestions)
+
+    def test_fulltext_indexed_column_is_not_nullable(self, artifacts):
+        assert "`message` String CODEC" in artifacts.ddl
+        assert "`message` Nullable" not in artifacts.ddl
+
+
+class TestNotNull:
+    def test_not_null_config_strips_nullable(self):
+        config = {"order_by": ["@timestamp"], "not_null": ["trace_id"]}
+        ddl = convert_index("logs_prod", _MAPPING, config).ddl
+        assert "`trace_id` String CODEC" in ddl
+        assert "`trace_id` Nullable" not in ddl
 
 
 class TestSampleNarrowing:

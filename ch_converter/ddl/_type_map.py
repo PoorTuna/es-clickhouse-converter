@@ -23,7 +23,7 @@ _SCALAR_TYPES: dict[str, str] = {
     "half_float": "Float32",
     "scaled_float": "Float64",
     "boolean": "UInt8",
-    "ip": "Array(Variant(IPv4, IPv6))",
+    "ip": "IPv6",
     "geo_point": "Point",
     "binary": "String",
     "version": "String",
