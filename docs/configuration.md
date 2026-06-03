@@ -348,4 +348,3 @@ in the config (or back it with `--sample`).
 `partition_by`, `codec_overrides`, `indexes`, and `materialized` are passed to
 ClickHouse as **raw SQL**. The converter never runs SQL itself, but **you** will
 run the output — so only feed configs from a trusted source.
-```
