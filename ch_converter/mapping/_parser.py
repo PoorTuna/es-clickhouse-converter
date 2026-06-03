@@ -2,18 +2,19 @@
 
 Accepts either the full ``GET /<index>/_mapping`` response
 (``{"idx": {"mappings": {...}}}``) or a bare ``{"properties": {...}}`` block.
-No ClickHouse knowledge lives here — this layer only understands ES.
+No ClickHouse knowledge lives here - this layer only understands ES.
 """
 
 from typing import Any
 
 from ._dynamic import (
     has_dynamic_templates,
+    is_nested,
     normalize_dynamic,
     routes_to_json,
     runtime_field_names,
 )
-from ._models import EsField, MappingModel
+from ._models import EsField, MappingModel, NestedGroup
 
 
 def parse_mapping(raw: dict[str, Any]) -> MappingModel:
@@ -22,11 +23,19 @@ def parse_mapping(raw: dict[str, Any]) -> MappingModel:
 
     fields: list[EsField] = []
     json_roots: list[str] = []
-    _walk(properties, prefix="", fields=fields, json_roots=json_roots)
+    nested_groups: list[NestedGroup] = []
+    _walk(
+        properties,
+        prefix="",
+        fields=fields,
+        json_roots=json_roots,
+        nested_groups=nested_groups,
+    )
 
     return MappingModel(
         fields=tuple(fields),
         json_roots=tuple(json_roots),
+        nested_groups=tuple(nested_groups),
         runtime_fields=runtime_field_names(mappings),
         root_dynamic=normalize_dynamic(mappings),
         has_dynamic_templates=has_dynamic_templates(mappings),
@@ -51,6 +60,57 @@ def _walk(
     prefix: str,
     fields: list[EsField],
     json_roots: list[str],
+    nested_groups: list[NestedGroup],
+) -> None:
+    for name, node in properties.items():
+        path = f"{prefix}{name}"
+        if not isinstance(node, dict):
+            continue
+
+        if routes_to_json(node):
+            json_roots.append(path)
+            continue
+
+        if is_nested(node):
+            nested_groups.append(_build_nested_group(path, node, json_roots))
+            continue
+
+        children = node.get("properties")
+        if children is not None:
+            _walk(
+                children,
+                prefix=f"{path}.",
+                fields=fields,
+                json_roots=json_roots,
+                nested_groups=nested_groups,
+            )
+            continue
+
+        fields.append(_build_field(path, node))
+
+
+def _build_nested_group(
+    path: str, node: dict[str, Any], json_roots: list[str]
+) -> NestedGroup:
+    """Collect a ``type: nested`` subtree's scalar leaves into one group.
+
+    Inner objects and nested fields flatten into the same group (their leaves
+    become parallel-array sub-columns); only ``dynamic``/``enabled: false``
+    pockets break out to the index-level JSON roots.
+    """
+    leaves: list[EsField] = []
+    _collect_leaves(
+        node.get("properties", {}), prefix=f"{path}.", leaves=leaves, json_roots=json_roots
+    )
+    return NestedGroup(path=path, fields=tuple(leaves))
+
+
+def _collect_leaves(
+    properties: dict[str, Any],
+    *,
+    prefix: str,
+    leaves: list[EsField],
+    json_roots: list[str],
 ) -> None:
     for name, node in properties.items():
         path = f"{prefix}{name}"
@@ -63,10 +123,10 @@ def _walk(
 
         children = node.get("properties")
         if children is not None:
-            _walk(children, prefix=f"{path}.", fields=fields, json_roots=json_roots)
+            _collect_leaves(children, prefix=f"{path}.", leaves=leaves, json_roots=json_roots)
             continue
 
-        fields.append(_build_field(path, node))
+        leaves.append(_build_field(path, node))
 
 
 def _build_field(path: str, node: dict[str, Any]) -> EsField:

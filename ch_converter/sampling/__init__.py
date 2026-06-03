@@ -1,4 +1,4 @@
-"""Offline sample profiling — public surface."""
+"""Offline sample profiling - public surface."""
 
 from ._profile import FieldProfile, SampleProfile
 from ._sampler import profile_samples

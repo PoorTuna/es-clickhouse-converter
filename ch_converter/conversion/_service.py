@@ -1,4 +1,4 @@
-"""Conversion orchestrator — the single code path shared by the API and CLI."""
+"""Conversion orchestrator - the single code path shared by the API and CLI."""
 
 from collections.abc import Mapping
 from typing import Any

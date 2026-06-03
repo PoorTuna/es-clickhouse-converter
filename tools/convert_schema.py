@@ -1,4 +1,4 @@
-"""Offline CLI: ES _mapping JSON → ClickHouse DDL. No server, no network.
+"""Offline CLI: ES _mapping JSON -> ClickHouse DDL. No server, no network.
 
     python tools/convert_schema.py --mapping idx.mapping.json \
         --config idx.config.json [--sample data.ndjson] [--out idx.sql]
@@ -19,6 +19,7 @@ from ch_converter.sampling import SampleProfile, profile_samples
 
 
 def main(argv: list[str] | None = None) -> int:
+    _force_utf8_streams()
     args = _parse_args(argv)
 
     mapping_raw = _load_json(args.mapping)
@@ -30,6 +31,18 @@ def main(argv: list[str] | None = None) -> int:
     _write_output(artifacts.ddl, args.out)
     _report_advisories(artifacts.warnings, artifacts.suggestions)
     return 0
+
+
+def _force_utf8_streams() -> None:
+    """Emit UTF-8 regardless of the console codepage (Windows defaults to cp1252).
+
+    Without this, any non-ASCII byte in the DDL or advisories - a unicode field
+    name, a smart dash - is mangled on stdout/stderr.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8")
 
 
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:

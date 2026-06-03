@@ -1,6 +1,6 @@
 """Internal field model produced by parsing an Elasticsearch ``_mapping``.
 
-Pure data containers — no project imports, no I/O, no ClickHouse knowledge.
+Pure data containers - no project imports, no I/O, no ClickHouse knowledge.
 """
 
 from dataclasses import dataclass
@@ -26,19 +26,35 @@ class EsField:
 
 
 @dataclass(frozen=True, slots=True)
+class NestedGroup:
+    """An ES ``type: nested`` subtree: a fixed-schema array of sub-documents.
+
+    ``path`` is the dotted path to the nested field (e.g. ``tags``); ``fields``
+    are its scalar leaves, each carrying its full dotted path (``tags.key``).
+    The DDL layer renders this as a ClickHouse ``Nested(...)`` column so the
+    per-element correlation ES guarantees survives the conversion.
+    """
+
+    path: str
+    fields: tuple[EsField, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class MappingModel:
     """Parsed mapping: typed fields plus everything dynamic about the index.
 
     ``json_roots`` are subtree paths ES declares open-ended (``dynamic: true``,
     ``runtime``, or ``enabled: false``); each becomes a ClickHouse ``JSON``
-    column. ``root_dynamic`` is the top-level ``dynamic`` setting verbatim
-    (``None`` when unset, where ES defaults to dynamic), and
+    column. ``nested_groups`` are ``type: nested`` subtrees rendered as
+    ``Nested(...)`` columns. ``root_dynamic`` is the top-level ``dynamic``
+    setting verbatim (``None`` when unset, where ES defaults to dynamic), and
     ``has_dynamic_templates`` flags ``dynamic_templates`` rules. The DDL layer
     turns these into a catch-all column or a suggestion.
     """
 
     fields: tuple[EsField, ...]
     json_roots: tuple[str, ...] = ()
+    nested_groups: tuple[NestedGroup, ...] = ()
     runtime_fields: tuple[str, ...] = ()
     root_dynamic: str | None = None
     has_dynamic_templates: bool = False

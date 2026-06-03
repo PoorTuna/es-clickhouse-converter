@@ -1,1 +1,1 @@
-"""ES → ClickHouse schema converter — deterministic, offline DDL generation."""
+"""ES -> ClickHouse schema converter - deterministic, offline DDL generation."""

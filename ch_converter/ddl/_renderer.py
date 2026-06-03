@@ -2,7 +2,7 @@
 
 from collections.abc import Sequence
 
-from ._table_model import Column, SkipIndex, Table
+from ._table_model import Column, NestedColumn, SkipIndex, Table
 
 _INDENT = "    "
 
@@ -36,7 +36,7 @@ def _render_comment_block(warnings: Sequence[str], suggestions: Sequence[str]) -
 
 
 def _render_create(table: Table) -> str:
-    entries = [_render_column(column) for column in table.columns]
+    entries = [_render_entry(column) for column in table.columns]
     entries += [_render_index(index) for index in table.indexes]
     body = ",\n".join(f"{_INDENT}{entry}" for entry in entries)
 
@@ -49,6 +49,19 @@ def _render_create(table: Table) -> str:
         rendered = ", ".join(f"{key} = {value}" for key, value in table.settings.items())
         lines.append(f"SETTINGS {rendered}")
     return "\n".join(lines) + ";"
+
+
+def _render_entry(column: Column | NestedColumn) -> str:
+    if isinstance(column, NestedColumn):
+        return _render_nested(column)
+    return _render_column(column)
+
+
+def _render_nested(column: NestedColumn) -> str:
+    inner = ",\n".join(
+        f"{_INDENT}{_INDENT}{quote_ident(sub.name)} {sub.ch_type}" for sub in column.columns
+    )
+    return f"{quote_ident(column.name)} Nested(\n{inner}\n{_INDENT})"
 
 
 def _render_column(column: Column) -> str:

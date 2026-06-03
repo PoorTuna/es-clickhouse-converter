@@ -53,6 +53,46 @@ class TestFieldFlags:
         assert _field(model, "status").null_value == "NA"
 
 
+class TestNestedFields:
+    def test_nested_type_becomes_a_group_not_flat_fields(self):
+        raw = {
+            "properties": {
+                "tags": {
+                    "type": "nested",
+                    "properties": {"key": {"type": "keyword"}, "weight": {"type": "long"}},
+                },
+                "level": {"type": "keyword"},
+            }
+        }
+
+        model = parse_mapping(raw)
+
+        assert {field.path for field in model.fields} == {"level"}
+        assert len(model.nested_groups) == 1
+        group = model.nested_groups[0]
+        assert group.path == "tags"
+        assert {field.path for field in group.fields} == {"tags.key", "tags.weight"}
+
+    def test_dynamic_pocket_inside_nested_routes_to_json(self):
+        raw = {
+            "properties": {
+                "events": {
+                    "type": "nested",
+                    "properties": {
+                        "name": {"type": "keyword"},
+                        "extra": {"type": "object", "dynamic": "true"},
+                    },
+                }
+            }
+        }
+
+        model = parse_mapping(raw)
+
+        group = model.nested_groups[0]
+        assert {field.path for field in group.fields} == {"events.name"}
+        assert model.json_roots == ("events.extra",)
+
+
 class TestDynamicRouting:
     def test_dynamic_and_disabled_subtrees_become_json_roots(self):
         raw = {

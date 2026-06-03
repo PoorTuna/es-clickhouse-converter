@@ -1,4 +1,4 @@
-"""Per-index conversion config — how a mapping should become a table.
+"""Per-index conversion config - how a mapping should become a table.
 
 Lives in the ddl layer because it is consumed here; the conversion package
 re-exports it as the public configuration surface.
@@ -26,6 +26,7 @@ class IndexConfig:
     order_by: tuple[str, ...] = ()
     partition_by: str | None = None
     json_fields: tuple[str, ...] = ()
+    map_fields: Mapping[str, str] = field(default_factory=dict)
     type_overrides: Mapping[str, str] = field(default_factory=dict)
     codec_overrides: Mapping[str, str] = field(default_factory=dict)
     low_cardinality: tuple[str, ...] = ()
@@ -47,6 +48,7 @@ def load_index_config(raw: Mapping[str, Any] | None) -> IndexConfig:
         order_by=tuple(raw.get("order_by", ())),
         partition_by=raw.get("partition_by"),
         json_fields=tuple(raw.get("json_fields", ())),
+        map_fields=dict(raw.get("map_fields", {})),
         type_overrides=dict(raw.get("type_overrides", {})),
         codec_overrides=dict(raw.get("codec_overrides", {})),
         low_cardinality=tuple(raw.get("low_cardinality", ())),

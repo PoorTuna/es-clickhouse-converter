@@ -1,6 +1,6 @@
-"""Elasticsearch type → ClickHouse type. Single source of truth for mapping.
+"""Elasticsearch type -> ClickHouse type. Single source of truth for mapping.
 
-Defaults are safe-wide (``long`` → ``Int64``): width is a correctness concern
+Defaults are safe-wide (``long`` -> ``Int64``): width is a correctness concern
 (avoid overflow), while storage is reclaimed by codecs (see ``_codecs``).
 """
 

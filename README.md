@@ -34,6 +34,11 @@ python tools/convert_schema.py \
 `LowCardinality` from observed distinct ratios. Without it, types default
 safe-wide and storage is reclaimed by codecs (`T64`, `DoubleDelta`, `ZSTD`).
 
+The `--config` file shapes the output table (sort key, partitioning, container
+choices, codecs, …). Every key is optional. See
+**[docs/configuration.md](docs/configuration.md)** for a plain-language reference
+to every field, with examples and what each default does.
+
 ## API
 
 ```bash
@@ -49,10 +54,14 @@ so they always emit identical DDL. A frontend can be built against `/convert`.
 
 ## Design
 
-- **Hybrid schema:** known scalar fields → typed columns; `dynamic:true` /
-  `dynamic_templates` / `runtime` / `enabled:false` subtrees → `JSON` columns
-  (ClickHouse JSON auto-materializes future sub-columns, mirroring ES dynamic
-  mapping). `dynamic:strict` stays fully typed.
+- **Hybrid schema (four buckets):** known scalar fields → typed columns; ES
+  `type: nested` → `Nested(...)` (array-of-objects, query with `ARRAY JOIN`);
+  `dynamic:true` / `dynamic_templates` / `runtime` / `enabled:false` subtrees →
+  `JSON` (auto-materializes future sub-columns, mirroring ES dynamic mapping);
+  and opt-in `map_fields` → `Map(String, V)` for uniform-value bags. Nested is
+  automatic; Map is manual (uniform value type can't be safely inferred).
+  `dynamic:strict` stays fully typed. See
+  [docs/configuration.md](docs/configuration.md).
 - **Infer → suggest → promote:** skip indexes, `LowCardinality`, and materialized
   columns are emitted as commented suggestions and only become live DDL when
   confirmed in config or backed by `--sample`.

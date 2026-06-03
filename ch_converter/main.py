@@ -9,7 +9,7 @@ from ._routes import register_routes
 # Must run before FastAPI/Instrumentator so all log records use our format.
 configure_logging()
 
-app = FastAPI(title="ES → ClickHouse Schema Converter", version="0.1.0")
+app = FastAPI(title="ES -> ClickHouse Schema Converter", version="0.1.0")
 install_metrics(app)
 register_routes(app)
 

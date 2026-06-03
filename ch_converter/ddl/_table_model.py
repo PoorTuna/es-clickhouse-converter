@@ -1,4 +1,4 @@
-"""ClickHouse table model — the intermediate the renderer turns into SQL.
+"""ClickHouse table model - the intermediate the renderer turns into SQL.
 
 ``ch_type`` is the final, fully-wrapped type string (e.g.
 ``LowCardinality(Nullable(String))``); the builder decides wrapping, the
@@ -20,6 +20,18 @@ class Column:
 
 
 @dataclass(frozen=True, slots=True)
+class NestedColumn:
+    """A ClickHouse ``Nested(...)`` column - parallel arrays sharing a name.
+
+    Sub-columns carry only a name and type; ClickHouse forbids per-column
+    ``CODEC``/``DEFAULT`` inside a ``Nested`` declaration.
+    """
+
+    name: str
+    columns: tuple[Column, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class SkipIndex:
     name: str
     expr: str
@@ -30,7 +42,7 @@ class SkipIndex:
 @dataclass(frozen=True, slots=True)
 class Table:
     name: str
-    columns: tuple[Column, ...]
+    columns: tuple[Column | NestedColumn, ...]
     engine: str = "MergeTree"
     order_by: tuple[str, ...] = ()
     partition_by: str | None = None

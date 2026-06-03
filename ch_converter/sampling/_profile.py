@@ -1,4 +1,4 @@
-"""Profiles derived from a sample of real rows — data containers only."""
+"""Profiles derived from a sample of real rows - data containers only."""
 
 from collections.abc import Mapping
 from dataclasses import dataclass

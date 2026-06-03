@@ -2,13 +2,13 @@
 mapping, per-index config, and optional sample evidence.
 
 This is the one place mapping facts, config, codecs, and optimizer decisions
-come together. Type wrapping order is ``LowCardinality(Nullable(String))`` —
+come together. Type wrapping order is ``LowCardinality(Nullable(String))`` -
 the form ClickHouse expects.
 """
 
 from dataclasses import dataclass
 
-from ..mapping import EsField, MappingModel
+from ..mapping import EsField, MappingModel, NestedGroup
 from ..sampling import SampleProfile
 from ._codecs import default_codec
 from ._config import IndexConfig
@@ -20,7 +20,7 @@ from ._optimizer import (
     use_low_cardinality,
 )
 from ._renderer import render_table, to_column_name
-from ._table_model import Column, SkipIndex, Table
+from ._table_model import Column, NestedColumn, SkipIndex, Table
 from ._type_map import is_integer, is_string, map_scalar, narrowest_int, supports_nullable
 
 _DATE_ES_TYPES = frozenset({"date", "date_nanos"})
@@ -44,11 +44,17 @@ def generate_ddl(
     suggestions: list[str] = []
 
     json_paths = _json_paths(mapping, config)
-    typed_fields = _typed_fields(mapping, json_paths)
+    map_paths = tuple(config.map_fields)
+    excluded = json_paths + map_paths
+    typed_fields = _typed_fields(mapping, excluded)
     order_by = _resolve_order_by(typed_fields, config, suggestions)
 
-    columns = _build_typed_columns(typed_fields, config, profile, order_by, warnings, suggestions)
+    columns: list[Column | NestedColumn] = list(
+        _build_typed_columns(typed_fields, config, profile, order_by, warnings, suggestions)
+    )
     columns += _build_json_columns(json_paths)
+    columns += _build_map_columns(config)
+    columns += _build_nested_columns(mapping.nested_groups, config, excluded, warnings, suggestions)
     columns += _build_materialized_columns(config)
 
     table = Table(
@@ -75,8 +81,8 @@ def _json_paths(mapping: MappingModel, config: IndexConfig) -> tuple[str, ...]:
     return tuple(dict.fromkeys((*mapping.json_roots, *config.json_fields)))
 
 
-def _typed_fields(mapping: MappingModel, json_paths: tuple[str, ...]) -> tuple[EsField, ...]:
-    return tuple(field for field in mapping.fields if not _under_any(field.path, json_paths))
+def _typed_fields(mapping: MappingModel, excluded_roots: tuple[str, ...]) -> tuple[EsField, ...]:
+    return tuple(field for field in mapping.fields if not _under_any(field.path, excluded_roots))
 
 
 def _under_any(path: str, roots: tuple[str, ...]) -> bool:
@@ -92,9 +98,9 @@ def _resolve_order_by(
         return tuple(to_column_name(path) for path in config.order_by)
     fallback = config.timestamp_field or _first_date_field(fields)
     if fallback is None:
-        suggestions.append("no ORDER BY chosen — set config.order_by for this table")
+        suggestions.append("no ORDER BY chosen - set config.order_by for this table")
         return ()
-    suggestions.append(f"ORDER BY defaulted to '{fallback}' — confirm this is correct")
+    suggestions.append(f"ORDER BY defaulted to '{fallback}' - confirm this is correct")
     return (to_column_name(fallback),)
 
 
@@ -198,6 +204,56 @@ def _collect_field_suggestions(
 
 def _build_json_columns(json_paths: tuple[str, ...]) -> list[Column]:
     return [Column(name=to_column_name(path), ch_type="JSON") for path in json_paths]
+
+
+def _build_map_columns(config: IndexConfig) -> list[Column]:
+    return [
+        Column(name=to_column_name(path), ch_type=_map_type(value_type))
+        for path, value_type in config.map_fields.items()
+    ]
+
+
+def _map_type(value_type: str) -> str:
+    """Accept a full ``Map(...)`` type or a bare value type to wrap as a Map."""
+    if value_type.startswith("Map("):
+        return value_type
+    return f"Map(String, {value_type})"
+
+
+def _build_nested_columns(
+    groups: tuple[NestedGroup, ...],
+    config: IndexConfig,
+    excluded_roots: tuple[str, ...],
+    warnings: list[str],
+    suggestions: list[str],
+) -> list[NestedColumn]:
+    columns: list[NestedColumn] = []
+    for group in groups:
+        if _under_any(group.path, excluded_roots):
+            continue
+        sub_columns = tuple(
+            _build_nested_subcolumn(field, group.path, config, warnings) for field in group.fields
+        )
+        columns.append(NestedColumn(name=to_column_name(group.path), columns=sub_columns))
+        suggestions.append(
+            f"'{group.path}' is an ES nested field - emitted as Nested(...); "
+            "query its rows with ARRAY JOIN"
+        )
+    return columns
+
+
+def _build_nested_subcolumn(
+    field: EsField, group_path: str, config: IndexConfig, warnings: list[str]
+) -> Column:
+    relative_path = field.path[len(group_path) + 1 :]
+    base_type = config.type_overrides.get(field.path)
+    if base_type is None:
+        base_type, warning = map_scalar(field.es_type, date_precision=config.date_precision)
+        if warning is not None:
+            warnings.append(f"{field.path}: {warning}")
+    nullable = field.null_value is None and supports_nullable(base_type)
+    ch_type = f"Nullable({base_type})" if nullable else base_type
+    return Column(name=to_column_name(relative_path), ch_type=ch_type)
 
 
 def _build_materialized_columns(config: IndexConfig) -> list[Column]:

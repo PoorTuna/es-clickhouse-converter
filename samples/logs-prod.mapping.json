@@ -33,6 +33,21 @@
           "type": "text",
           "fields": { "raw": { "type": "keyword" } }
         },
+        "metrics": {
+          "properties": {
+            "cpu": { "type": "double" },
+            "mem": { "type": "double" },
+            "latency_ms": { "type": "double" }
+          }
+        },
+        "tags": {
+          "type": "nested",
+          "properties": {
+            "key": { "type": "keyword" },
+            "value": { "type": "keyword" },
+            "score": { "type": "long" }
+          }
+        },
         "labels": {
           "type": "object",
           "dynamic": "true"

@@ -2,7 +2,7 @@
 
 Width handles correctness; codecs handle storage. ``T64`` truncates integers to
 their used bit-width at write time, so an ``Int64`` of small values costs about
-what a ``UInt16`` would — which is why we default safe-wide and let the codec
+what a ``UInt16`` would - which is why we default safe-wide and let the codec
 reclaim the bytes instead of guessing narrow types.
 """
 

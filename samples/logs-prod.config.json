@@ -4,6 +4,7 @@
   "order_by": ["service.name", "@timestamp"],
   "partition_by": "toYYYYMM(`@timestamp`)",
   "json_fields": ["labels"],
+  "map_fields": { "metrics": "Float64" },
   "type_overrides": { "status_code": "UInt16" },
   "codec_overrides": { "bytes_total": "Delta, ZSTD(3)" },
   "low_cardinality": ["service.name", "level"],
