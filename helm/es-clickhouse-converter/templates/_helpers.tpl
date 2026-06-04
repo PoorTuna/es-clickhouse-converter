@@ -89,11 +89,15 @@ imagePullSecrets:
 {{- end -}}
 {{- end -}}
 
-{{/* In-cluster URL the UI uses to reach the backend, unless overridden. */}}
+{{/*
+In-cluster URL the UI uses to reach the backend, unless overridden.
+Uses the fully-qualified Service DNS name: nginx's `resolver` does not apply
+/etc/resolv.conf search domains, so a short name would never resolve in-cluster.
+*/}}
 {{- define "ecc.backendUrl" -}}
 {{- if .Values.ui.backendUrl -}}
 {{- .Values.ui.backendUrl -}}
 {{- else -}}
-{{- printf "http://%s:%v" (include "ecc.backend.fullname" .) .Values.backend.service.port -}}
+{{- printf "http://%s.%s.svc.%s:%v" (include "ecc.backend.fullname" .) .Release.Namespace .Values.clusterDomain .Values.backend.service.port -}}
 {{- end -}}
 {{- end -}}

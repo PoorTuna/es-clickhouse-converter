@@ -15,6 +15,10 @@ global:
 nameOverride: ""
 fullnameOverride: ""
 
+# Cluster DNS domain, used to build the backend Service FQDN the UI proxies to.
+# Default fits stock Kubernetes and OpenShift; change only for custom domains.
+clusterDomain: cluster.local
+
 # Labels/annotations merged onto every rendered resource.
 commonLabels: {}
 commonAnnotations: {}

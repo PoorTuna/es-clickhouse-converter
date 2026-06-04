@@ -59,6 +59,7 @@
     },
     "nameOverride": { "type": "string" },
     "fullnameOverride": { "type": "string" },
+    "clusterDomain": { "type": "string", "minLength": 1 },
     "commonLabels": { "$ref": "#/definitions/keyValueMap" },
     "commonAnnotations": { "$ref": "#/definitions/keyValueMap" },
     "serviceAccount": {
