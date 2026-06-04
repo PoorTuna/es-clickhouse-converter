@@ -1,0 +1,180 @@
+# Default values for es-clickhouse-converter.
+# Every image reference is configurable so the chart can run fully air-gapped
+# from a mirror registry. Security defaults are OpenShift-restricted-SCC safe.
+
+global:
+  # Mirror/registry prefix applied to BOTH images. Set this to your internal
+  # registry for air-gapped installs, e.g. "registry.internal:5000".
+  # Leave empty to use each image's own .registry field.
+  imageRegistry: ""
+  # Pull secrets applied to every pod (names of pre-existing docker-registry
+  # secrets). Example: ["my-registry-creds"].
+  imagePullSecrets: []
+
+# Override the chart name / fully-qualified name used for resource names.
+nameOverride: ""
+fullnameOverride: ""
+
+# Labels/annotations merged onto every rendered resource.
+commonLabels: {}
+commonAnnotations: {}
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+  automountServiceAccountToken: false
+
+# Pod-level security context. No runAsUser/fsGroup on purpose: OpenShift's SCC
+# assigns an arbitrary uid in group 0, and both images are built to run that
+# way. On plain Kubernetes the images already default to a non-root user.
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+
+# Container-level security context, applied to every container.
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false
+  capabilities:
+    drop:
+      - ALL
+
+backend:
+  replicaCount: 1
+  image:
+    registry: docker.io
+    repository: poortuna/es-clickhouse-converter
+    # Defaults to .Chart.AppVersion when empty.
+    tag: ""
+    # IfNotPresent keeps air-gapped nodes from reaching out for an existing tag.
+    pullPolicy: IfNotPresent
+  # LOG_LEVEL is read by the app; PORT/HOST are injected from service.port.
+  logLevel: INFO
+  # Extra raw env entries (list of {name,value} or valueFrom).
+  extraEnv: []
+  service:
+    type: ClusterIP
+    port: 8000
+    annotations: {}
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: http
+    initialDelaySeconds: 5
+    periodSeconds: 15
+    timeoutSeconds: 3
+    failureThreshold: 3
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: http
+    initialDelaySeconds: 3
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+  autoscaling:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 80
+    targetMemoryUtilizationPercentage: null
+  podAnnotations: {}
+  podLabels: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+ui:
+  replicaCount: 1
+  image:
+    registry: docker.io
+    repository: poortuna/es-clickhouse-converter-ui
+    tag: ""
+    pullPolicy: IfNotPresent
+  # Backend URL the UI's nginx proxies /convert and /health to. Empty = derive
+  # the in-cluster backend Service DNS name automatically.
+  backendUrl: ""
+  # Pin the nginx DNS resolver. Empty = auto-detect from /etc/resolv.conf
+  # (CoreDNS on k8s/OpenShift) at container start.
+  resolver: ""
+  containerPort: 8080
+  extraEnv: []
+  service:
+    type: ClusterIP
+    port: 80
+    annotations: {}
+  resources:
+    requests:
+      cpu: 25m
+      memory: 32Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+  livenessProbe:
+    httpGet:
+      path: /
+      port: http
+    initialDelaySeconds: 5
+    periodSeconds: 15
+    timeoutSeconds: 3
+    failureThreshold: 3
+  readinessProbe:
+    httpGet:
+      path: /
+      port: http
+    initialDelaySeconds: 3
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+  autoscaling:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 80
+    targetMemoryUtilizationPercentage: null
+  podAnnotations: {}
+  podLabels: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# Standard Kubernetes Ingress (exposes the UI). Mutually independent from the
+# OpenShift Route below; enable whichever your platform uses.
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  host: ""
+  path: /
+  pathType: Prefix
+  tls: []
+  # - secretName: converter-tls
+  #   hosts:
+  #     - converter.example.com
+
+# OpenShift Route (exposes the UI). Enable on OpenShift instead of Ingress.
+route:
+  enabled: false
+  host: ""
+  annotations: {}
+  wildcardPolicy: None
+  tls:
+    enabled: true
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+
+# Lock down pod-to-pod traffic: only the UI may reach the backend; the UI is
+# reachable from the ingress controller / route. Disabled by default.
+networkPolicy:
+  enabled: false
+  # Extra ingress peers allowed to reach the UI (e.g. the ingress namespace).
+  uiIngressFrom: []

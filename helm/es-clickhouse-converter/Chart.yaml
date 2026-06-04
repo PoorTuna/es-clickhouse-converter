@@ -1,0 +1,30 @@
+apiVersion: v2
+name: es-clickhouse-converter
+description: >-
+  Elasticsearch -> ClickHouse schema converter: FastAPI backend plus React UI.
+  Air-gap friendly (no external chart deps, mirrorable images, IfNotPresent
+  pulls) and runs unchanged under OpenShift's restricted SCC.
+type: application
+
+# Chart version is independent of the app. appVersion tracks the container
+# images (backend + UI share tag 0.3.0).
+version: 0.1.0
+appVersion: "0.3.0"
+
+kubeVersion: ">=1.21.0-0"
+
+keywords:
+  - elasticsearch
+  - clickhouse
+  - converter
+  - openshift
+  - airgap
+
+home: https://github.com/PoorTuna/es-clickhouse-converter
+sources:
+  - https://github.com/PoorTuna/es-clickhouse-converter
+  - https://github.com/PoorTuna/es-clickhouse-converter-ui
+
+maintainers:
+  - name: PoorTuna
+    url: https://github.com/PoorTuna

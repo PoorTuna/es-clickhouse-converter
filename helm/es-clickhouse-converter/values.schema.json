@@ -1,0 +1,165 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "es-clickhouse-converter Helm values",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["global", "backend", "ui"],
+  "definitions": {
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "pullPolicy"],
+      "properties": {
+        "registry": { "type": "string" },
+        "repository": { "type": "string", "minLength": 1 },
+        "tag": { "type": "string" },
+        "pullPolicy": { "type": "string", "enum": ["Always", "IfNotPresent", "Never"] }
+      }
+    },
+    "service": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "port"],
+      "properties": {
+        "type": { "type": "string", "enum": ["ClusterIP", "NodePort", "LoadBalancer"] },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "annotations": { "type": "object", "additionalProperties": { "type": "string" } }
+      }
+    },
+    "autoscaling": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "minReplicas": { "type": "integer", "minimum": 1 },
+        "maxReplicas": { "type": "integer", "minimum": 1 },
+        "targetCPUUtilizationPercentage": { "type": ["integer", "null"], "minimum": 1, "maximum": 100 },
+        "targetMemoryUtilizationPercentage": { "type": ["integer", "null"], "minimum": 1, "maximum": 100 }
+      }
+    },
+    "keyValueMap": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "envList": {
+      "type": "array",
+      "items": { "type": "object" }
+    },
+    "freeObject": { "type": "object" }
+  },
+  "properties": {
+    "global": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "imageRegistry": { "type": "string" },
+        "imagePullSecrets": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "nameOverride": { "type": "string" },
+    "fullnameOverride": { "type": "string" },
+    "commonLabels": { "$ref": "#/definitions/keyValueMap" },
+    "commonAnnotations": { "$ref": "#/definitions/keyValueMap" },
+    "serviceAccount": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["create"],
+      "properties": {
+        "create": { "type": "boolean" },
+        "name": { "type": "string" },
+        "annotations": { "$ref": "#/definitions/keyValueMap" },
+        "automountServiceAccountToken": { "type": "boolean" }
+      }
+    },
+    "podSecurityContext": { "$ref": "#/definitions/freeObject" },
+    "containerSecurityContext": { "$ref": "#/definitions/freeObject" },
+    "backend": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["image", "service"],
+      "properties": {
+        "replicaCount": { "type": "integer", "minimum": 0 },
+        "image": { "$ref": "#/definitions/image" },
+        "logLevel": { "type": "string", "enum": ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] },
+        "extraEnv": { "$ref": "#/definitions/envList" },
+        "service": { "$ref": "#/definitions/service" },
+        "resources": { "$ref": "#/definitions/freeObject" },
+        "livenessProbe": { "$ref": "#/definitions/freeObject" },
+        "readinessProbe": { "$ref": "#/definitions/freeObject" },
+        "autoscaling": { "$ref": "#/definitions/autoscaling" },
+        "podAnnotations": { "$ref": "#/definitions/keyValueMap" },
+        "podLabels": { "$ref": "#/definitions/keyValueMap" },
+        "nodeSelector": { "$ref": "#/definitions/keyValueMap" },
+        "tolerations": { "type": "array", "items": { "type": "object" } },
+        "affinity": { "$ref": "#/definitions/freeObject" }
+      }
+    },
+    "ui": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["image", "service", "containerPort"],
+      "properties": {
+        "replicaCount": { "type": "integer", "minimum": 0 },
+        "image": { "$ref": "#/definitions/image" },
+        "backendUrl": { "type": "string" },
+        "resolver": { "type": "string" },
+        "containerPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "extraEnv": { "$ref": "#/definitions/envList" },
+        "service": { "$ref": "#/definitions/service" },
+        "resources": { "$ref": "#/definitions/freeObject" },
+        "livenessProbe": { "$ref": "#/definitions/freeObject" },
+        "readinessProbe": { "$ref": "#/definitions/freeObject" },
+        "autoscaling": { "$ref": "#/definitions/autoscaling" },
+        "podAnnotations": { "$ref": "#/definitions/keyValueMap" },
+        "podLabels": { "$ref": "#/definitions/keyValueMap" },
+        "nodeSelector": { "$ref": "#/definitions/keyValueMap" },
+        "tolerations": { "type": "array", "items": { "type": "object" } },
+        "affinity": { "$ref": "#/definitions/freeObject" }
+      }
+    },
+    "ingress": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "className": { "type": "string" },
+        "annotations": { "$ref": "#/definitions/keyValueMap" },
+        "host": { "type": "string" },
+        "path": { "type": "string" },
+        "pathType": { "type": "string", "enum": ["Exact", "Prefix", "ImplementationSpecific"] },
+        "tls": { "type": "array", "items": { "type": "object" } }
+      }
+    },
+    "route": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "host": { "type": "string" },
+        "annotations": { "$ref": "#/definitions/keyValueMap" },
+        "wildcardPolicy": { "type": "string", "enum": ["None", "Subdomain"] },
+        "tls": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "termination": { "type": "string", "enum": ["edge", "passthrough", "reencrypt"] },
+            "insecureEdgeTerminationPolicy": { "type": "string", "enum": ["None", "Allow", "Redirect"] }
+          }
+        }
+      }
+    },
+    "networkPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "uiIngressFrom": { "type": "array", "items": { "type": "object" } }
+      }
+    }
+  }
+}

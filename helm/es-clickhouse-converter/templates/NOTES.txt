@@ -1,0 +1,24 @@
+{{ .Chart.Name }} {{ .Chart.AppVersion }} installed as release "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}".
+
+Components:
+  - backend: {{ include "ecc.image" (dict "root" . "image" .Values.backend.image) }}
+  - ui:      {{ include "ecc.image" (dict "root" . "image" .Values.ui.image) }}
+
+The UI proxies the backend in-cluster at:
+  {{ include "ecc.backendUrl" . }}
+
+Reach the UI:
+{{- if .Values.route.enabled }}
+  OpenShift Route:
+    oc get route {{ include "ecc.fullname" . }} -n {{ .Release.Namespace }} -o jsonpath='{.spec.host}{"\n"}'
+{{- else if .Values.ingress.enabled }}
+  Ingress host:
+    http{{ if .Values.ingress.tls }}s{{ end }}://{{ .Values.ingress.host | default "<ingress-host>" }}{{ .Values.ingress.path }}
+{{- else }}
+  No external Ingress/Route enabled. Port-forward locally:
+    kubectl port-forward -n {{ .Release.Namespace }} svc/{{ include "ecc.ui.fullname" . }} 8080:{{ .Values.ui.service.port }}
+  then open http://localhost:8080
+{{- end }}
+
+Air-gap note: set global.imageRegistry to your mirror and (if needed)
+global.imagePullSecrets so both images pull from inside the network.
