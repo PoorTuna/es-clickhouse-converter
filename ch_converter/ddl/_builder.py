@@ -52,7 +52,8 @@ def generate_ddl(
 
     json_paths = _json_paths(mapping, config)
     map_paths = tuple(config.map_fields)
-    excluded = json_paths + map_paths
+    nested_roots = _forced_nested_roots(config, json_paths, map_paths)
+    excluded = json_paths + map_paths + nested_roots
     typed_fields = _typed_fields(mapping, excluded)
     order_by = _resolve_order_by(typed_fields, config, suggestions)
     non_null = _non_null_columns(config, order_by, suggestions)
@@ -63,6 +64,7 @@ def generate_ddl(
     columns += _build_json_columns(json_paths)
     columns += _build_map_columns(config)
     columns += _build_nested_columns(mapping.nested_groups, config, excluded, warnings, suggestions)
+    columns += _build_forced_nested_columns(mapping, nested_roots, config, warnings, suggestions)
     columns += _build_materialized_columns(config)
 
     table = Table(
@@ -87,6 +89,17 @@ def generate_ddl(
 
 def _json_paths(mapping: MappingModel, config: IndexConfig) -> tuple[str, ...]:
     return tuple(dict.fromkeys((*mapping.json_roots, *config.json_fields)))
+
+
+def _forced_nested_roots(
+    config: IndexConfig, json_paths: tuple[str, ...], map_paths: tuple[str, ...]
+) -> tuple[str, ...]:
+    """Object roots the user pinned to ``Nested(...)``, minus any already
+    claimed by a JSON or Map route (JSON > Map > Nested precedence)."""
+    claimed = json_paths + map_paths
+    return tuple(
+        dict.fromkeys(root for root in config.nested_fields if not _under_any(root, claimed))
+    )
 
 
 def _typed_fields(mapping: MappingModel, excluded_roots: tuple[str, ...]) -> tuple[EsField, ...]:
@@ -280,6 +293,34 @@ def _build_nested_columns(
         suggestions.append(
             f"'{group.path}' is an ES nested field - emitted as Nested(...); "
             "query its rows with ARRAY JOIN"
+        )
+    return columns
+
+
+def _build_forced_nested_columns(
+    mapping: MappingModel,
+    nested_roots: tuple[str, ...],
+    config: IndexConfig,
+    warnings: list[str],
+    suggestions: list[str],
+) -> list[NestedColumn]:
+    """Render plain-object roots the user pinned to ``Nested(...)``.
+
+    Gathers each root's flattened scalar leaves (which would otherwise become
+    ``root_child`` columns) into one ``Nested`` column of parallel arrays.
+    """
+    columns: list[NestedColumn] = []
+    for root in nested_roots:
+        leaves = tuple(field for field in mapping.fields if field.path.startswith(f"{root}."))
+        if not leaves:
+            warnings.append(f"'{root}' was pinned to Nested but has no scalar fields - skipped")
+            continue
+        sub_columns = tuple(
+            _build_nested_subcolumn(field, root, config, warnings) for field in leaves
+        )
+        columns.append(NestedColumn(name=to_column_name(root), columns=sub_columns))
+        suggestions.append(
+            f"'{root}' object pinned to Nested(...); query its rows with ARRAY JOIN"
         )
     return columns
 

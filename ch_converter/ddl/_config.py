@@ -27,6 +27,7 @@ class IndexConfig:
     partition_by: str | None = None
     json_fields: tuple[str, ...] = ()
     map_fields: Mapping[str, str] = field(default_factory=dict)
+    nested_fields: tuple[str, ...] = ()
     type_overrides: Mapping[str, str] = field(default_factory=dict)
     codec_overrides: Mapping[str, str] = field(default_factory=dict)
     low_cardinality: tuple[str, ...] = ()
@@ -49,6 +50,7 @@ def load_index_config(raw: Mapping[str, Any] | None) -> IndexConfig:
         partition_by=raw.get("partition_by"),
         json_fields=tuple(raw.get("json_fields", ())),
         map_fields=dict(raw.get("map_fields", {})),
+        nested_fields=tuple(raw.get("nested_fields", ())),
         type_overrides=dict(raw.get("type_overrides", {})),
         codec_overrides=dict(raw.get("codec_overrides", {})),
         low_cardinality=tuple(raw.get("low_cardinality", ())),
