@@ -96,7 +96,7 @@ def dynamic_suggestions(mapping: MappingModel) -> list[str]:
 
 
 def _has_root_json(mapping: MappingModel) -> bool:
-    return any("." not in root for root in mapping.json_roots)
+    return any("." not in root.path for root in mapping.json_roots)
 
 
 def _is_denylisted(path: str, config: IndexConfig) -> bool:

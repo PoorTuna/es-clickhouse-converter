@@ -26,6 +26,20 @@ class EsField:
 
 
 @dataclass(frozen=True, slots=True)
+class JsonRoot:
+    """An open-ended ES subtree that becomes a ClickHouse ``JSON`` column.
+
+    Triggered by ``dynamic: true``/``runtime`` or ``enabled: false``. ``path``
+    is the dotted path to the object (e.g. ``labels``); ``fields`` are any
+    leaves ES still declared under it explicitly. Those render as typed path
+    hints inside ``JSON(...)`` while the column stays open to new dynamic paths.
+    """
+
+    path: str
+    fields: tuple[EsField, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
 class NestedGroup:
     """An ES ``type: nested`` subtree: a fixed-schema array of sub-documents.
 
@@ -43,9 +57,10 @@ class NestedGroup:
 class MappingModel:
     """Parsed mapping: typed fields plus everything dynamic about the index.
 
-    ``json_roots`` are subtree paths ES declares open-ended (``dynamic: true``,
+    ``json_roots`` are subtrees ES declares open-ended (``dynamic: true``,
     ``runtime``, or ``enabled: false``); each becomes a ClickHouse ``JSON``
-    column. ``nested_groups`` are ``type: nested`` subtrees rendered as
+    column, carrying any explicitly declared leaves as typed path hints.
+    ``nested_groups`` are ``type: nested`` subtrees rendered as
     ``Nested(...)`` columns. ``root_dynamic`` is the top-level ``dynamic``
     setting verbatim (``None`` when unset, where ES defaults to dynamic), and
     ``has_dynamic_templates`` flags ``dynamic_templates`` rules. The DDL layer
@@ -53,7 +68,7 @@ class MappingModel:
     """
 
     fields: tuple[EsField, ...]
-    json_roots: tuple[str, ...] = ()
+    json_roots: tuple[JsonRoot, ...] = ()
     nested_groups: tuple[NestedGroup, ...] = ()
     runtime_fields: tuple[str, ...] = ()
     root_dynamic: str | None = None

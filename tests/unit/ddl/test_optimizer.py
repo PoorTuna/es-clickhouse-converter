@@ -6,7 +6,7 @@ from ch_converter.ddl._optimizer import (
     runtime_field_warnings,
     use_low_cardinality,
 )
-from ch_converter.mapping import EsField, MappingModel
+from ch_converter.mapping import EsField, JsonRoot, MappingModel
 from ch_converter.sampling import FieldProfile, SampleProfile
 
 
@@ -70,7 +70,9 @@ class TestMappingLevelAdvisories:
         assert len(warnings) == 1 and "day_of_week" in warnings[0]
 
     def test_dynamic_templates_suggest_materialized_promotion(self):
-        model = MappingModel(fields=(), json_roots=("labels",), has_dynamic_templates=True)
+        model = MappingModel(
+            fields=(), json_roots=(JsonRoot(path="labels"),), has_dynamic_templates=True
+        )
         suggestions = dynamic_suggestions(model)
         assert any("dynamic_templates" in s for s in suggestions)
 

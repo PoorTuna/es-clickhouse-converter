@@ -90,7 +90,7 @@ class TestNestedFields:
 
         group = model.nested_groups[0]
         assert {field.path for field in group.fields} == {"events.name"}
-        assert model.json_roots == ("events.extra",)
+        assert {root.path for root in model.json_roots} == {"events.extra"}
 
 
 class TestDynamicRouting:
@@ -105,8 +105,27 @@ class TestDynamicRouting:
 
         model = parse_mapping(raw)
 
-        assert set(model.json_roots) == {"labels", "blob"}
+        assert {root.path for root in model.json_roots} == {"labels", "blob"}
         assert {field.path for field in model.fields} == {"kept"}
+
+    def test_dynamic_subtree_retains_declared_leaves_as_hints(self):
+        raw = {
+            "properties": {
+                "product": {
+                    "type": "object",
+                    "dynamic": "true",
+                    "properties": {
+                        "sku": {"type": "keyword"},
+                        "meta": {"properties": {"weight": {"type": "float"}}},
+                    },
+                }
+            }
+        }
+
+        model = parse_mapping(raw)
+
+        root = next(root for root in model.json_roots if root.path == "product")
+        assert {field.path for field in root.fields} == {"product.sku", "product.meta.weight"}
 
     def test_index_level_dynamic_metadata_is_parsed(self):
         raw = {

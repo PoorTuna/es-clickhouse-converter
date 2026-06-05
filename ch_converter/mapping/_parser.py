@@ -14,7 +14,7 @@ from ._dynamic import (
     routes_to_json,
     runtime_field_names,
 )
-from ._models import EsField, MappingModel, NestedGroup
+from ._models import EsField, JsonRoot, MappingModel, NestedGroup
 
 
 def parse_mapping(raw: dict[str, Any]) -> MappingModel:
@@ -22,7 +22,7 @@ def parse_mapping(raw: dict[str, Any]) -> MappingModel:
     properties = mappings.get("properties", {})
 
     fields: list[EsField] = []
-    json_roots: list[str] = []
+    json_roots: list[JsonRoot] = []
     nested_groups: list[NestedGroup] = []
     _walk(
         properties,
@@ -59,7 +59,7 @@ def _walk(
     *,
     prefix: str,
     fields: list[EsField],
-    json_roots: list[str],
+    json_roots: list[JsonRoot],
     nested_groups: list[NestedGroup],
 ) -> None:
     for name, node in properties.items():
@@ -68,7 +68,7 @@ def _walk(
             continue
 
         if routes_to_json(node):
-            json_roots.append(path)
+            json_roots.append(_build_json_root(path, node))
             continue
 
         if is_nested(node):
@@ -89,8 +89,31 @@ def _walk(
         fields.append(_build_field(path, node))
 
 
+def _build_json_root(path: str, node: dict[str, Any]) -> JsonRoot:
+    """A JSON column plus the leaves ES still declared under it, used as typed
+    path hints. Deeper dynamic/disabled/nested pockets carry no flat scalar
+    schema and are skipped - the enclosing JSON column already covers them.
+    """
+    leaves = _declared_leaves(node.get("properties", {}), prefix=f"{path}.")
+    return JsonRoot(path=path, fields=tuple(leaves))
+
+
+def _declared_leaves(properties: dict[str, Any], *, prefix: str) -> list[EsField]:
+    leaves: list[EsField] = []
+    for name, node in properties.items():
+        if not isinstance(node, dict) or routes_to_json(node) or is_nested(node):
+            continue
+        path = f"{prefix}{name}"
+        children = node.get("properties")
+        if children is not None:
+            leaves.extend(_declared_leaves(children, prefix=f"{path}."))
+            continue
+        leaves.append(_build_field(path, node))
+    return leaves
+
+
 def _build_nested_group(
-    path: str, node: dict[str, Any], json_roots: list[str]
+    path: str, node: dict[str, Any], json_roots: list[JsonRoot]
 ) -> NestedGroup:
     """Collect a ``type: nested`` subtree's scalar leaves into one group.
 
@@ -110,7 +133,7 @@ def _collect_leaves(
     *,
     prefix: str,
     leaves: list[EsField],
-    json_roots: list[str],
+    json_roots: list[JsonRoot],
 ) -> None:
     for name, node in properties.items():
         path = f"{prefix}{name}"
@@ -118,7 +141,7 @@ def _collect_leaves(
             continue
 
         if routes_to_json(node):
-            json_roots.append(path)
+            json_roots.append(_build_json_root(path, node))
             continue
 
         children = node.get("properties")

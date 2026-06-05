@@ -9,7 +9,7 @@ the form ClickHouse expects.
 import re
 from dataclasses import dataclass
 
-from ..mapping import EsField, MappingModel, NestedGroup
+from ..mapping import EsField, MappingModel
 from ..sampling import SampleProfile
 from ._codecs import default_codec
 from ._config import IndexConfig
@@ -50,21 +50,15 @@ def generate_ddl(
     warnings: list[str] = []
     suggestions: list[str] = []
 
-    json_paths = _json_paths(mapping, config)
-    map_paths = tuple(config.map_fields)
-    nested_roots = _forced_nested_roots(config, json_paths, map_paths)
-    excluded = json_paths + map_paths + nested_roots
-    typed_fields = _typed_fields(mapping, excluded)
+    routes = _resolve_object_routes(mapping, config, warnings, suggestions)
+    typed_fields = _typed_fields_for_routes(mapping, routes)
     order_by = _resolve_order_by(typed_fields, config, suggestions)
     non_null = _non_null_columns(config, order_by, suggestions)
 
     columns: list[Column | NestedColumn] = list(
         _build_typed_columns(typed_fields, config, profile, non_null, warnings, suggestions)
     )
-    columns += _build_json_columns(json_paths)
-    columns += _build_map_columns(config)
-    columns += _build_nested_columns(mapping.nested_groups, config, excluded, warnings, suggestions)
-    columns += _build_forced_nested_columns(mapping, nested_roots, config, warnings, suggestions)
+    columns += _build_route_columns(routes, config, warnings, suggestions)
     columns += _build_materialized_columns(config)
 
     table = Table(
@@ -87,23 +81,125 @@ def generate_ddl(
     )
 
 
-def _json_paths(mapping: MappingModel, config: IndexConfig) -> tuple[str, ...]:
-    return tuple(dict.fromkeys((*mapping.json_roots, *config.json_fields)))
+@dataclass(frozen=True, slots=True)
+class _ObjectRoute:
+    """One object root's resolved routing: exactly one strategy per root.
+
+    ``source`` is ``object`` for a plain/dynamic object or ``array`` for an ES
+    ``type: nested`` (array of sub-documents). ``detected`` is the strategy ES
+    dictates by default (``json``/``nested``), or ``None`` for a plain object.
+    """
+
+    path: str
+    strategy: str
+    leaves: tuple[EsField, ...]
+    source: str
+    detected: str | None
+    map_value_type: str | None = None
 
 
-def _forced_nested_roots(
-    config: IndexConfig, json_paths: tuple[str, ...], map_paths: tuple[str, ...]
-) -> tuple[str, ...]:
-    """Object roots the user pinned to ``Nested(...)``, minus any already
-    claimed by a JSON or Map route (JSON > Map > Nested precedence)."""
-    claimed = json_paths + map_paths
-    return tuple(
-        dict.fromkeys(root for root in config.nested_fields if not _under_any(root, claimed))
+def _resolve_object_routes(
+    mapping: MappingModel,
+    config: IndexConfig,
+    warnings: list[str],
+    suggestions: list[str],
+) -> list[_ObjectRoute]:
+    """Collapse detected defaults and explicit config into one strategy per
+    object root, so no root is ever emitted as two columns."""
+    detected = _detected_routes(mapping)
+    explicit, map_values = _explicit_strategies(config)
+
+    routes: list[_ObjectRoute] = []
+    for path in (*detected, *(p for p in explicit if p not in detected)):
+        det_strategy, source, det_leaves = detected.get(path, (None, "object", None))
+        leaves = det_leaves if det_leaves is not None else _plain_leaves(mapping, path)
+        strategy = explicit.get(path, det_strategy or "flatten")
+        strategy = _honor_strategy(path, strategy, source, det_strategy, warnings, suggestions)
+        routes.append(
+            _ObjectRoute(
+                path=path,
+                strategy=strategy,
+                leaves=leaves,
+                source=source,
+                detected=det_strategy,
+                map_value_type=map_values.get(path),
+            )
+        )
+    return routes
+
+
+def _detected_routes(
+    mapping: MappingModel,
+) -> dict[str, tuple[str, str, tuple[EsField, ...]]]:
+    detected: dict[str, tuple[str, str, tuple[EsField, ...]]] = {
+        root.path: ("json", "object", root.fields) for root in mapping.json_roots
+    }
+    for group in mapping.nested_groups:
+        detected[group.path] = ("nested", "array", group.fields)
+    return detected
+
+
+def _explicit_strategies(config: IndexConfig) -> tuple[dict[str, str], dict[str, str]]:
+    """User-pinned strategy per root, applying ``json > map > nested > flatten``
+    precedence when raw config lists a path more than once."""
+    explicit: dict[str, str] = {}
+    for path in config.json_fields:
+        explicit.setdefault(path, "json")
+    for path in config.map_fields:
+        explicit.setdefault(path, "map")
+    for path in config.nested_fields:
+        explicit.setdefault(path, "nested")
+    for path in config.flatten_fields:
+        explicit.setdefault(path, "flatten")
+    return explicit, dict(config.map_fields)
+
+
+def _honor_strategy(
+    path: str,
+    strategy: str,
+    source: str,
+    detected: str | None,
+    warnings: list[str],
+    suggestions: list[str],
+) -> str:
+    """Resolve unsupported combinations and warn about lossy overrides."""
+    if strategy == "map" and source == "array":
+        warnings.append(
+            f"'{path}' is an ES nested array - Map isn't supported; kept as Nested(...)"
+        )
+        strategy = "nested"
+    if detected == "json" and strategy != "json":
+        suggestions.append(
+            f"'{path}' was ES-dynamic; routing it to {strategy} drops the open-ended "
+            "catch-all - new fields won't be captured (keep it JSON, or add "
+            "config.json_fields for a separate catch-all column)"
+        )
+    return strategy
+
+
+def _plain_leaves(mapping: MappingModel, root: str) -> tuple[EsField, ...]:
+    return tuple(field for field in mapping.fields if field.path.startswith(f"{root}."))
+
+
+def _typed_fields_for_routes(
+    mapping: MappingModel, routes: list[_ObjectRoute]
+) -> tuple[EsField, ...]:
+    """Flat scalar columns: ``mapping.fields`` minus any claimed by a
+    json/map/nested route, plus the leaves of a detected object flattened by
+    override (those never lived in ``mapping.fields``)."""
+    claimed = tuple(route.path for route in routes if route.strategy != "flatten")
+    base = tuple(field for field in mapping.fields if not _under_any(field.path, claimed))
+    extra = tuple(
+        leaf
+        for route in routes
+        if route.strategy == "flatten" and route.source == "object" and route.detected
+        for leaf in route.leaves
     )
+    return base + extra
 
 
-def _typed_fields(mapping: MappingModel, excluded_roots: tuple[str, ...]) -> tuple[EsField, ...]:
-    return tuple(field for field in mapping.fields if not _under_any(field.path, excluded_roots))
+def _under_any(path: str, roots: tuple[str, ...]) -> bool:
+    return any(path == root or path.startswith(f"{root}.") for root in roots)
 
 
 def _under_any(path: str, roots: tuple[str, ...]) -> bool:
@@ -257,15 +353,63 @@ def _collect_field_suggestions(
             suggestions.append(suggestion)
 
 
-def _build_json_columns(json_paths: tuple[str, ...]) -> list[Column]:
-    return [Column(name=to_column_name(path), ch_type="JSON") for path in json_paths]
-
-
-def _build_map_columns(config: IndexConfig) -> list[Column]:
-    return [
-        Column(name=to_column_name(path), ch_type=_map_type(value_type))
-        for path, value_type in config.map_fields.items()
+def _build_route_columns(
+    routes: list[_ObjectRoute],
+    config: IndexConfig,
+    warnings: list[str],
+    suggestions: list[str],
+) -> list[Column | NestedColumn]:
+    """One column per non-flatten route, plus ``Array(...)`` columns for any
+    nested array flattened by override. Object roots flattened by default flow
+    through ``_build_typed_columns`` instead."""
+    columns: list[Column | NestedColumn] = [
+        _build_json_column(route, config, warnings) for route in routes if route.strategy == "json"
     ]
+    columns += [
+        Column(name=to_column_name(route.path), ch_type=_map_type(route.map_value_type or "String"))
+        for route in routes
+        if route.strategy == "map"
+    ]
+    for route in routes:
+        if route.strategy == "nested":
+            nested = _build_nested_route(route, config, warnings, suggestions)
+            if nested is not None:
+                columns.append(nested)
+    for route in routes:
+        if route.strategy == "flatten" and route.source == "array":
+            columns += _build_array_flatten_columns(route, config, warnings)
+        elif route.strategy == "flatten" and route.detected and not route.leaves:
+            warnings.append(
+                f"'{route.path}' was routed to flatten but has no scalar fields - skipped"
+            )
+    return columns
+
+
+def _build_json_column(route: _ObjectRoute, config: IndexConfig, warnings: list[str]) -> Column:
+    # An ES nested array can't take scalar path hints, so route it to bare JSON.
+    leaves = route.leaves if route.source == "object" else ()
+    return Column(
+        name=to_column_name(route.path),
+        ch_type=_json_type(route.path, leaves, config, warnings),
+    )
+
+
+def _json_type(
+    root: str, leaves: tuple[EsField, ...], config: IndexConfig, warnings: list[str]
+) -> str:
+    """A ``JSON`` type, type-hinting each known leaf as a sub-path so ClickHouse
+    stores it natively while the column stays open to new dynamic paths."""
+    hints = tuple(_json_path_hint(root, leaf, config, warnings) for leaf in leaves)
+    if not hints:
+        return "JSON"
+    return f"JSON({', '.join(hints)})"
+
+
+def _json_path_hint(
+    root: str, leaf: EsField, config: IndexConfig, warnings: list[str]
+) -> str:
+    relative_path = leaf.path[len(root) + 1 :]
+    return f"{relative_path} {_leaf_base_type(leaf, config, warnings)}"
 
 
 def _map_type(value_type: str) -> str:
@@ -275,68 +419,53 @@ def _map_type(value_type: str) -> str:
     return f"Map(String, {value_type})"
 
 
-def _build_nested_columns(
-    groups: tuple[NestedGroup, ...],
-    config: IndexConfig,
-    excluded_roots: tuple[str, ...],
-    warnings: list[str],
-    suggestions: list[str],
-) -> list[NestedColumn]:
-    columns: list[NestedColumn] = []
-    for group in groups:
-        if _under_any(group.path, excluded_roots):
-            continue
-        sub_columns = tuple(
-            _build_nested_subcolumn(field, group.path, config, warnings) for field in group.fields
-        )
-        columns.append(NestedColumn(name=to_column_name(group.path), columns=sub_columns))
-        suggestions.append(
-            f"'{group.path}' is an ES nested field - emitted as Nested(...); "
-            "query its rows with ARRAY JOIN"
-        )
-    return columns
+def _build_nested_route(
+    route: _ObjectRoute, config: IndexConfig, warnings: list[str], suggestions: list[str]
+) -> NestedColumn | None:
+    if not route.leaves:
+        warnings.append(f"'{route.path}' was routed to Nested but has no scalar fields - skipped")
+        return None
+    sub_columns = tuple(
+        _build_nested_subcolumn(field, route.path, config, warnings) for field in route.leaves
+    )
+    suggestions.append(f"'{route.path}' routed to Nested(...); query its rows with ARRAY JOIN")
+    return NestedColumn(name=to_column_name(route.path), columns=sub_columns)
 
 
-def _build_forced_nested_columns(
-    mapping: MappingModel,
-    nested_roots: tuple[str, ...],
-    config: IndexConfig,
-    warnings: list[str],
-    suggestions: list[str],
-) -> list[NestedColumn]:
-    """Render plain-object roots the user pinned to ``Nested(...)``.
-
-    Gathers each root's flattened scalar leaves (which would otherwise become
-    ``root_child`` columns) into one ``Nested`` column of parallel arrays.
-    """
-    columns: list[NestedColumn] = []
-    for root in nested_roots:
-        leaves = tuple(field for field in mapping.fields if field.path.startswith(f"{root}."))
-        if not leaves:
-            warnings.append(f"'{root}' was pinned to Nested but has no scalar fields - skipped")
-            continue
-        sub_columns = tuple(
-            _build_nested_subcolumn(field, root, config, warnings) for field in leaves
+def _build_array_flatten_columns(
+    route: _ObjectRoute, config: IndexConfig, warnings: list[str]
+) -> list[Column]:
+    """A nested array flattened to parallel ``Array(T)`` columns - the Nested
+    representation without the ``Nested`` sugar."""
+    if not route.leaves:
+        warnings.append(f"'{route.path}' was routed to flatten but has no scalar fields - skipped")
+        return []
+    return [
+        Column(
+            name=to_column_name(field.path),
+            ch_type=f"Array({_leaf_base_type(field, config, warnings)})",
         )
-        columns.append(NestedColumn(name=to_column_name(root), columns=sub_columns))
-        suggestions.append(
-            f"'{root}' object pinned to Nested(...); query its rows with ARRAY JOIN"
-        )
-    return columns
+        for field in route.leaves
+    ]
 
 
 def _build_nested_subcolumn(
     field: EsField, group_path: str, config: IndexConfig, warnings: list[str]
 ) -> Column:
     relative_path = field.path[len(group_path) + 1 :]
+    base_type = _leaf_base_type(field, config, warnings)
+    nullable = field.null_value is None and supports_nullable(base_type)
+    ch_type = f"Nullable({base_type})" if nullable else base_type
+    return Column(name=to_column_name(relative_path), ch_type=ch_type)
+
+
+def _leaf_base_type(field: EsField, config: IndexConfig, warnings: list[str]) -> str:
     base_type = config.type_overrides.get(field.path)
     if base_type is None:
         base_type, warning = map_scalar(field.es_type, date_precision=config.date_precision)
         if warning is not None:
             warnings.append(f"{field.path}: {warning}")
-    nullable = field.null_value is None and supports_nullable(base_type)
-    ch_type = f"Nullable({base_type})" if nullable else base_type
-    return Column(name=to_column_name(relative_path), ch_type=ch_type)
+    return base_type
 
 
 def _build_materialized_columns(config: IndexConfig) -> list[Column]:
