@@ -1,0 +1,132 @@
+"""Resolve each ES object root to exactly one ClickHouse routing strategy.
+
+Detected defaults (``json`` for dynamic subtrees, ``nested`` for ES nested
+arrays) and explicit per-root config are collapsed here so no root is ever
+emitted as two columns. The DDL builder consumes the resulting routes.
+"""
+
+from dataclasses import dataclass
+
+from ..mapping import EsField, MappingModel
+from ._config import IndexConfig
+
+
+@dataclass(frozen=True, slots=True)
+class ObjectRoute:
+    """One object root's resolved routing: exactly one strategy per root.
+
+    ``source`` is ``object`` for a plain/dynamic object or ``array`` for an ES
+    ``type: nested`` (array of sub-documents). ``detected`` is the strategy ES
+    dictates by default (``json``/``nested``), or ``None`` for a plain object.
+    """
+
+    path: str
+    strategy: str
+    leaves: tuple[EsField, ...]
+    source: str
+    detected: str | None
+    map_value_type: str | None = None
+
+
+def resolve_object_routes(
+    mapping: MappingModel,
+    config: IndexConfig,
+    warnings: list[str],
+    suggestions: list[str],
+) -> list[ObjectRoute]:
+    """Collapse detected defaults and explicit config into one strategy per
+    object root, so no root is ever emitted as two columns."""
+    detected = _detected_routes(mapping)
+    explicit, map_values = _explicit_strategies(config)
+
+    routes: list[ObjectRoute] = []
+    for path in (*detected, *(p for p in explicit if p not in detected)):
+        det_strategy, source, det_leaves = detected.get(path, (None, "object", None))
+        leaves = det_leaves if det_leaves is not None else _plain_leaves(mapping, path)
+        strategy = explicit.get(path, det_strategy or "flatten")
+        strategy = _honor_strategy(path, strategy, source, det_strategy, warnings, suggestions)
+        routes.append(
+            ObjectRoute(
+                path=path,
+                strategy=strategy,
+                leaves=leaves,
+                source=source,
+                detected=det_strategy,
+                map_value_type=map_values.get(path),
+            )
+        )
+    return routes
+
+
+def typed_fields_for_routes(
+    mapping: MappingModel, routes: list[ObjectRoute]
+) -> tuple[EsField, ...]:
+    """Flat scalar columns: ``mapping.fields`` minus any claimed by a
+    json/map/nested route, plus the leaves of a detected object flattened by
+    override (those never lived in ``mapping.fields``)."""
+    claimed = tuple(route.path for route in routes if route.strategy != "flatten")
+    base = tuple(field for field in mapping.fields if not under_any(field.path, claimed))
+    extra = tuple(
+        leaf
+        for route in routes
+        if route.strategy == "flatten" and route.source == "object" and route.detected
+        for leaf in route.leaves
+    )
+    return base + extra
+
+
+def under_any(path: str, roots: tuple[str, ...]) -> bool:
+    return any(path == root or path.startswith(f"{root}.") for root in roots)
+
+
+def _detected_routes(
+    mapping: MappingModel,
+) -> dict[str, tuple[str, str, tuple[EsField, ...]]]:
+    detected: dict[str, tuple[str, str, tuple[EsField, ...]]] = {
+        root.path: ("json", "object", root.fields) for root in mapping.json_roots
+    }
+    for group in mapping.nested_groups:
+        detected[group.path] = ("nested", "array", group.fields)
+    return detected
+
+
+def _explicit_strategies(config: IndexConfig) -> tuple[dict[str, str], dict[str, str]]:
+    """User-pinned strategy per root, applying ``json > map > nested > flatten``
+    precedence when raw config lists a path more than once."""
+    explicit: dict[str, str] = {}
+    for path in config.json_fields:
+        explicit.setdefault(path, "json")
+    for path in config.map_fields:
+        explicit.setdefault(path, "map")
+    for path in config.nested_fields:
+        explicit.setdefault(path, "nested")
+    for path in config.flatten_fields:
+        explicit.setdefault(path, "flatten")
+    return explicit, dict(config.map_fields)
+
+
+def _honor_strategy(
+    path: str,
+    strategy: str,
+    source: str,
+    detected: str | None,
+    warnings: list[str],
+    suggestions: list[str],
+) -> str:
+    """Resolve unsupported combinations and warn about lossy overrides."""
+    if strategy == "map" and source == "array":
+        warnings.append(
+            f"'{path}' is an ES nested array - Map isn't supported; kept as Nested(...)"
+        )
+        strategy = "nested"
+    if detected == "json" and strategy != "json":
+        suggestions.append(
+            f"'{path}' was ES-dynamic; routing it to {strategy} drops the open-ended "
+            "catch-all - new fields won't be captured (keep it JSON, or add "
+            "config.json_fields for a separate catch-all column)"
+        )
+    return strategy
+
+
+def _plain_leaves(mapping: MappingModel, root: str) -> tuple[EsField, ...]:
+    return tuple(field for field in mapping.fields if field.path.startswith(f"{root}."))

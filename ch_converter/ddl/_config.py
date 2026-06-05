@@ -38,10 +38,20 @@ class IndexConfig:
     date_precision: int = 3
     indexes: tuple[SkipIndexSpec, ...] = ()
     materialized: Mapping[str, str] = field(default_factory=dict)
+    warnings: tuple[str, ...] = ()
+
+
+_KNOWN_CONFIG_KEYS = frozenset(
+    name for name in IndexConfig.__dataclass_fields__ if name != "warnings"
+)
 
 
 def load_index_config(raw: Mapping[str, Any] | None) -> IndexConfig:
-    """Build an :class:`IndexConfig` from a plain mapping (JSON/body)."""
+    """Build an :class:`IndexConfig` from a plain mapping (JSON/body).
+
+    Unknown keys (typically typos) are ignored but recorded in ``warnings`` so
+    a silent no-op surfaces to the caller.
+    """
     if not raw:
         return IndexConfig()
     return IndexConfig(
@@ -64,10 +74,19 @@ def load_index_config(raw: Mapping[str, Any] | None) -> IndexConfig:
         date_precision=int(raw.get("date_precision", 3)),
         indexes=tuple(_load_index(spec) for spec in raw.get("indexes", ())),
         materialized=dict(raw.get("materialized", {})),
+        warnings=_unknown_key_warnings(raw),
     )
 
 
+def _unknown_key_warnings(raw: Mapping[str, Any]) -> tuple[str, ...]:
+    unknown = sorted(set(raw) - _KNOWN_CONFIG_KEYS)
+    return tuple(f"unknown config key '{key}' ignored" for key in unknown)
+
+
 def _load_index(spec: Mapping[str, Any]) -> SkipIndexSpec:
+    missing = [key for key in ("name", "expr", "type") if key not in spec]
+    if missing:
+        raise ValueError(f"index spec missing required key(s): {', '.join(missing)}")
     return SkipIndexSpec(
         name=spec["name"],
         expr=spec["expr"],

@@ -29,11 +29,28 @@ class TestConvert:
         response = client.post("/convert", json={"mapping": _MAPPING})
         assert response.status_code == 422
 
+    def test_malformed_properties_warns_instead_of_crashing(self):
+        response = client.post(
+            "/convert",
+            json={"index_name": "logs", "mapping": {"properties": "not-a-dict"}},
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert any("properties" in warning for warning in body["warnings"])
+
+    def test_invalid_config_is_rejected(self):
+        bad_config = {"indexes": [{"expr": "x"}]}
+        response = client.post(
+            "/convert",
+            json={"index_name": "logs", "mapping": _MAPPING, "config": bad_config},
+        )
+        assert response.status_code == 400
+
 
 class TestConvertBulk:
     def test_per_item_failure_is_isolated(self):
         good = {"index_name": "good", "mapping": _MAPPING}
-        bad = {"index_name": "bad", "mapping": {"properties": "not-a-dict"}}
+        bad = {"index_name": "bad", "mapping": _MAPPING, "config": {"indexes": [{"expr": "x"}]}}
 
         response = client.post("/convert/bulk", json=[good, bad])
 

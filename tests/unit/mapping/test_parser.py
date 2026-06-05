@@ -5,6 +5,27 @@ def _field(model, path):
     return next(field for field in model.fields if field.path == path)
 
 
+class TestMalformedMapping:
+    def test_non_object_top_level_properties_warns(self):
+        model = parse_mapping({"properties": "not-a-dict"})
+
+        assert model.fields == ()
+        assert any("properties" in warning for warning in model.warnings)
+
+    def test_non_object_nested_properties_is_treated_as_leaf(self):
+        raw = {"properties": {"service": {"type": "object", "properties": "broken"}}}
+
+        model = parse_mapping(raw)
+
+        assert _field(model, "service").es_type == "object"
+        assert any("service" in warning for warning in model.warnings)
+
+    def test_well_formed_mapping_has_no_warnings(self):
+        model = parse_mapping({"properties": {"level": {"type": "keyword"}}})
+
+        assert model.warnings == ()
+
+
 class TestNestedObjects:
     def test_object_properties_flatten_to_dotted_paths(self):
         raw = {"properties": {"service": {"properties": {"name": {"type": "keyword"}}}}}

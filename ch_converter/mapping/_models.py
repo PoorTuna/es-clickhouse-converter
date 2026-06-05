@@ -64,7 +64,9 @@ class MappingModel:
     ``Nested(...)`` columns. ``root_dynamic`` is the top-level ``dynamic``
     setting verbatim (``None`` when unset, where ES defaults to dynamic), and
     ``has_dynamic_templates`` flags ``dynamic_templates`` rules. The DDL layer
-    turns these into a catch-all column or a suggestion.
+    turns these into a catch-all column or a suggestion. ``warnings`` carries
+    any diagnostics raised while parsing (e.g. a malformed ``properties`` block)
+    so the conversion can report them instead of crashing.
     """
 
     fields: tuple[EsField, ...]
@@ -73,3 +75,4 @@ class MappingModel:
     runtime_fields: tuple[str, ...] = ()
     root_dynamic: str | None = None
     has_dynamic_templates: bool = False
+    warnings: tuple[str, ...] = ()

@@ -110,3 +110,45 @@ class TestSampleNarrowing:
         )
         artifacts = convert_index("logs_prod", _MAPPING, {}, profile)
         assert "`bytes_total` Nullable(UInt8)" in artifacts.ddl
+
+    def test_nested_subcolumn_integer_is_narrowed(self):
+        mapping = {
+            "properties": {
+                "@timestamp": {"type": "date"},
+                "events": {"type": "nested", "properties": {"count": {"type": "long"}}},
+            }
+        }
+        profile = SampleProfile(
+            {
+                "events.count": FieldProfile(
+                    total_count=5, distinct_count=5, min_value=0, max_value=10
+                )
+            }
+        )
+
+        artifacts = convert_index("logs", mapping, {}, profile)
+
+        assert "`count` Nullable(UInt8)" in artifacts.ddl
+
+    def test_skipped_sample_lines_are_warned(self):
+        profile = SampleProfile(fields={}, skipped_lines=3)
+
+        artifacts = convert_index("logs_prod", _MAPPING, {}, profile)
+
+        assert any("skipped 3" in warning for warning in artifacts.warnings)
+
+
+class TestNullValueDefaults:
+    def test_non_scalar_null_value_omits_default_and_warns(self):
+        mapping = {
+            "properties": {
+                "@timestamp": {"type": "date"},
+                "meta": {"type": "keyword", "null_value": {"unexpected": "object"}},
+            }
+        }
+
+        artifacts = convert_index("logs", mapping, {"order_by": ["@timestamp"]})
+
+        meta_line = next(line for line in artifacts.ddl.splitlines() if "`meta`" in line)
+        assert "DEFAULT" not in meta_line
+        assert any("null_value" in warning for warning in artifacts.warnings)

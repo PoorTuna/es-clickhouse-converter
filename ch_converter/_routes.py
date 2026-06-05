@@ -7,13 +7,17 @@ from .conversion import convert_index
 
 logger = logging.getLogger(__name__)
 
+# Bad request bodies surface as these; anything else is a real server fault and
+# should propagate to a 500 rather than be masked as a client error.
+_CLIENT_ERRORS = (ValueError, KeyError, TypeError)
+
 
 def register_routes(app: FastAPI) -> None:
     @app.post("/convert", response_model=ConvertResponse)
     def convert(request: ConvertRequest) -> ConvertResponse:
         try:
             artifacts = convert_index(request.index_name, request.mapping, request.config)
-        except Exception as exc:
+        except _CLIENT_ERRORS as exc:
             logger.exception("conversion failed for index '%s'", request.index_name)
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return ConvertResponse.from_artifacts(artifacts)
@@ -30,7 +34,7 @@ def register_routes(app: FastAPI) -> None:
             try:
                 artifacts = convert_index(request.index_name, request.mapping, request.config)
                 results.append(ConvertResponse.from_artifacts(artifacts))
-            except Exception as exc:
+            except _CLIENT_ERRORS as exc:
                 logger.exception("bulk: index '%s' failed", request.index_name)
                 results.append(ConvertResponse.from_error(request.index_name, str(exc)))
         return results

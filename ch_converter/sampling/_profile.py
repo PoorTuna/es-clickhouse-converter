@@ -22,6 +22,7 @@ class FieldProfile:
 @dataclass(frozen=True, slots=True)
 class SampleProfile:
     fields: Mapping[str, FieldProfile]
+    skipped_lines: int = 0
 
     def get(self, path: str) -> FieldProfile | None:
         return self.fields.get(path)

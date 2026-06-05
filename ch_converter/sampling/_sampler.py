@@ -58,21 +58,31 @@ class _FieldAccumulator:
 
 def profile_samples(ndjson_path: Path) -> SampleProfile:
     accumulators: dict[str, _FieldAccumulator] = {}
-    for document in _iter_documents(ndjson_path):
-        for path, value in _flatten(document):
+    skipped = 0
+    for parsed in _iter_lines(ndjson_path):
+        if not isinstance(parsed, dict):
+            skipped += 1
+            continue
+        for path, value in _flatten(parsed):
             accumulators.setdefault(path, _FieldAccumulator()).observe(value)
-    return SampleProfile(fields={path: acc.to_profile() for path, acc in accumulators.items()})
+    return SampleProfile(
+        fields={path: acc.to_profile() for path, acc in accumulators.items()},
+        skipped_lines=skipped,
+    )
 
 
-def _iter_documents(ndjson_path: Path) -> Iterator[dict[str, Any]]:
+def _iter_lines(ndjson_path: Path) -> Iterator[Any]:
+    """Yield each parsed JSON line; lines that are not valid JSON yield ``None``
+    so the caller counts them as skipped rather than crashing the whole scan."""
     with ndjson_path.open(encoding="utf-8") as handle:
         for line in handle:
             line = line.strip()
             if not line:
                 continue
-            document = json.loads(line)
-            if isinstance(document, dict):
-                yield document
+            try:
+                yield json.loads(line)
+            except json.JSONDecodeError:
+                yield None
 
 
 def _flatten(document: dict[str, Any], prefix: str = "") -> Iterable[tuple[str, Any]]:
