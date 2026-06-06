@@ -86,9 +86,7 @@ class TestIndexExprNormalization:
         }
         config = {
             **_BASE,
-            "indexes": [
-                {"name": "svc", "expr": "service.name", "type": "tokenbf_v1(1,1,1)"}
-            ],
+            "indexes": [{"name": "svc", "expr": "service.name", "type": "tokenbf_v1(1,1,1)"}],
         }
 
         ddl = convert_index("logs", mapping, config).ddl

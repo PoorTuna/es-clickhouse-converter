@@ -143,9 +143,7 @@ def _warn_geo_point(path: str, base_type: str, warnings: list[str]) -> None:
         )
 
 
-def _codec_for(
-    field: EsField, base_type: str, config: IndexConfig, warnings: list[str]
-) -> str:
+def _codec_for(field: EsField, base_type: str, config: IndexConfig, warnings: list[str]) -> str:
     override = config.codec_overrides.get(field.path)
     if override is not None:
         return override
