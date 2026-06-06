@@ -60,6 +60,7 @@ def generate_ddl(
     columns += build_route_columns(routes, config, profile, warnings, suggestions)
     columns += build_materialized_columns(config)
     columns = _drop_colliding_columns(columns, warnings)
+    _validate_order_by(order_by, columns, warnings)
 
     table = Table(
         name=table_name,
@@ -102,6 +103,37 @@ def _drop_colliding_columns(
         seen.add(column.name)
         kept.append(column)
     return kept
+
+
+_UNSORTABLE_TYPE_PREFIXES = ("JSON", "Map(")
+
+
+def _validate_order_by(
+    order_by: tuple[str, ...],
+    columns: list[Column | NestedColumn],
+    warnings: list[str],
+) -> None:
+    """Flag sort keys that point at a missing or unsortable column.
+
+    ORDER BY runs against the column names actually emitted; a key that was
+    routed to JSON/Map/Nested or dropped on a collision yields a CREATE TABLE
+    that ClickHouse rejects, so surface it as a warning instead.
+    """
+    by_name = {column.name: column for column in columns}
+    for name in order_by:
+        column = by_name.get(name)
+        if column is None:
+            warnings.append(
+                f"ORDER BY references '{name}', which is not an emitted column - "
+                f"add or rename it or the CREATE TABLE will fail"
+            )
+        elif isinstance(column, NestedColumn) or column.ch_type.startswith(
+            _UNSORTABLE_TYPE_PREFIXES
+        ):
+            warnings.append(
+                f"ORDER BY references '{name}', a JSON/Map/Nested column ClickHouse "
+                f"cannot use as a sort key"
+            )
 
 
 def _resolve_order_by(
@@ -165,9 +197,18 @@ def _build_indexes(config: IndexConfig) -> tuple[SkipIndex, ...]:
     return tuple(
         SkipIndex(
             name=spec.name,
-            expr=spec.expr,
+            expr=_normalize_index_expr(spec.expr),
             index_type=spec.index_type,
             granularity=spec.granularity,
         )
         for spec in config.indexes
     )
+
+
+def _normalize_index_expr(expr: str) -> str:
+    """Flatten a bare dotted column reference (``service.name``) to its
+    ClickHouse column name (``service_name``) so the index targets the column the
+    builder actually emitted. Real expressions (functions, operators) are left
+    untouched - only a lone identifier is rewritten."""
+    bare = _bare_column_name(expr)
+    return bare if bare is not None else expr

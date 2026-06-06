@@ -261,8 +261,21 @@ ClickHouse skip whole blocks of data when filtering on a non-sort-key column.
 Each entry needs: `name`, `expr` (the column/expression), `type` (the index
 kind), and `granularity`.
 **Omit it:** No skip indexes. The converter still *suggests* useful ones (like a
-token index on `text` fields) in comments.
-**Example:**
+full-text index on `text` fields) in comments.
+
+For analyzed `text` fields the converter prefers a **`text` index** (the GIN
+inverted index, GA since ClickHouse 25.8) over the older `tokenbf_v1` token skip
+index. The `text` index is a true full-text index — backs `hasToken`,
+`searchAny`/`searchAll`, configurable tokenizers, and no false-positive granule
+reads — whereas `tokenbf_v1` only skips granules. Use `tokenbf_v1` if you target
+a server older than 25.8.
+**Example (default, ClickHouse >= 25.8):**
+```json
+"indexes": [
+  { "name": "msg_idx", "expr": "message", "type": "text(tokenizer = 'default')", "granularity": 1 }
+]
+```
+**Example (older servers):**
 ```json
 "indexes": [
   { "name": "msg_tok", "expr": "message", "type": "tokenbf_v1(30720, 3, 0)", "granularity": 4 }
@@ -300,8 +313,8 @@ This is `samples/logs-prod.config.json`, with a note on every line:
   "codec_overrides": { "bytes_total": "Delta, ZSTD(3)" }, // counter compresses well with Delta
   "low_cardinality": ["service.name", "level"],    // few distinct values -> dictionary-encode
   "counter_fields": ["bytes_total"],               // monotonic counter
-  "indexes": [                                     // token index so 'message' is searchable
-    { "name": "msg_tok", "expr": "message", "type": "tokenbf_v1(30720, 3, 0)", "granularity": 4 }
+  "indexes": [                                     // full-text index so 'message' is searchable
+    { "name": "msg_idx", "expr": "message", "type": "text(tokenizer = 'default')", "granularity": 1 }
   ],
   "materialized": { "status_class": "intDiv(status_code, 100)" } // 200 -> 2, 404 -> 4
 }

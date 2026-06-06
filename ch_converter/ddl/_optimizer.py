@@ -59,17 +59,33 @@ def index_suggestion(field: EsField, config: IndexConfig) -> str | None:
         return None
     if not field.indexed:
         return None
-    if field.es_type in _ANALYZED_ES_TYPES:
+    if _is_full_text(field):
         return (
-            f"'{field.path}' is analyzed text - consider a token skip index: "
+            f"'{field.path}' is analyzed free-text - consider a full-text index. "
+            f"Default (ClickHouse >= 25.8): "
+            f"INDEX {column}_idx {column} TYPE text(tokenizer = 'default') GRANULARITY 1. "
+            f"Older servers: "
             f"INDEX {column}_tok {column} TYPE tokenbf_v1(30720, 3, 0) GRANULARITY 4"
         )
-    if field.es_type in _STRING_ES_TYPES and not _is_denylisted(field.path, config):
+    if _is_keyword_like(field) and not _is_denylisted(field.path, config):
         return (
             f"'{field.path}' is keyword - consider a bloom_filter index if it is "
             f"filtered but not part of ORDER BY"
         )
     return None
+
+
+def _is_full_text(field: EsField) -> bool:
+    """Pure analyzed text only. A ``text`` field carrying a ``.keyword`` sub-field
+    is a dynamic-mapping multi-field - exact-match filtering on the keyword is the
+    common path, so it is treated as keyword, not full-text."""
+    return field.es_type in _ANALYZED_ES_TYPES and not field.has_keyword_subfield
+
+
+def _is_keyword_like(field: EsField) -> bool:
+    return field.es_type in _STRING_ES_TYPES or (
+        field.es_type in _ANALYZED_ES_TYPES and field.has_keyword_subfield
+    )
 
 
 def runtime_field_warnings(mapping: MappingModel) -> list[str]:

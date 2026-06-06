@@ -40,3 +40,17 @@ class TestProfileSamples:
         path.write_text('{"a": 1}\n\n{"a": 2}\n', encoding="utf-8")
 
         assert profile_samples(path).get("a").total_count == 2
+
+    def test_array_of_objects_profiles_leaf_paths(self, tmp_path):
+        path = _write_ndjson(tmp_path, [{"tags": [{"k": "a"}, {"k": "b"}]}])
+
+        tags_k = profile_samples(path).get("tags.k")
+
+        assert tags_k is not None and tags_k.total_count == 2
+
+    def test_scalar_array_elements_are_profiled(self, tmp_path):
+        path = _write_ndjson(tmp_path, [{"codes": [200, 500]}])
+
+        codes = profile_samples(path).get("codes")
+
+        assert (codes.min_value, codes.max_value) == (200, 500)

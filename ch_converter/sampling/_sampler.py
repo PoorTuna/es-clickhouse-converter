@@ -87,8 +87,17 @@ def _iter_lines(ndjson_path: Path) -> Iterator[Any]:
 
 def _flatten(document: dict[str, Any], prefix: str = "") -> Iterable[tuple[str, Any]]:
     for key, value in document.items():
-        path = f"{prefix}{key}"
-        if isinstance(value, dict):
-            yield from _flatten(value, prefix=f"{path}.")
-        else:
-            yield path, value
+        yield from _flatten_value(f"{prefix}{key}", value)
+
+
+def _flatten_value(path: str, value: Any) -> Iterable[tuple[str, Any]]:
+    """Descend objects and arrays alike so nested-array leaves (e.g.
+    ``tags.key`` inside ``tags: [{...}]``) and scalar-array elements are
+    profiled under the same dotted path the DDL builder looks them up by."""
+    if isinstance(value, dict):
+        yield from _flatten(value, prefix=f"{path}.")
+    elif isinstance(value, list):
+        for item in value:
+            yield from _flatten_value(path, item)
+    else:
+        yield path, value

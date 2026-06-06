@@ -9,6 +9,7 @@ from typing import Any
 
 from ._dynamic import (
     has_dynamic_templates,
+    is_alias,
     is_nested,
     normalize_dynamic,
     routes_to_json,
@@ -84,6 +85,10 @@ def _walk(
             nested_groups.append(_build_nested_group(path, node, json_roots, warnings))
             continue
 
+        if is_alias(node):
+            warnings.append(_alias_skip_warning(path))
+            continue
+
         children = _child_properties(node, path, warnings)
         if children is not None:
             _walk(
@@ -134,6 +139,9 @@ def _declared_leaves(
         if not isinstance(node, dict) or routes_to_json(node) or is_nested(node):
             continue
         path = f"{prefix}{name}"
+        if is_alias(node):
+            warnings.append(_alias_skip_warning(path))
+            continue
         children = _child_properties(node, path, warnings)
         if children is not None:
             leaves.extend(_declared_leaves(children, prefix=f"{path}.", warnings=warnings))
@@ -176,6 +184,10 @@ def _collect_leaves(
             json_roots.append(_build_json_root(path, node, warnings))
             continue
 
+        if is_alias(node):
+            warnings.append(_alias_skip_warning(path))
+            continue
+
         children = _child_properties(node, path, warnings)
         if children is not None:
             _collect_leaves(
@@ -184,6 +196,13 @@ def _collect_leaves(
             continue
 
         leaves.append(_build_field(path, node))
+
+
+def _alias_skip_warning(path: str) -> str:
+    return (
+        f"{path}: field alias skipped - ES aliases point at another field and "
+        f"store no data, so no ClickHouse column is emitted"
+    )
 
 
 def _build_field(path: str, node: dict[str, Any]) -> EsField:

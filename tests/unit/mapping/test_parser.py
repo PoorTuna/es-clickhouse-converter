@@ -26,6 +26,21 @@ class TestMalformedMapping:
         assert model.warnings == ()
 
 
+class TestAliasFields:
+    def test_alias_field_is_skipped_and_warned(self):
+        raw = {
+            "properties": {
+                "level": {"type": "keyword"},
+                "lvl": {"type": "alias", "path": "level"},
+            }
+        }
+
+        model = parse_mapping(raw)
+
+        assert all(field.path != "lvl" for field in model.fields)
+        assert any("alias" in warning and "lvl" in warning for warning in model.warnings)
+
+
 class TestNestedObjects:
     def test_object_properties_flatten_to_dotted_paths(self):
         raw = {"properties": {"service": {"properties": {"name": {"type": "keyword"}}}}}

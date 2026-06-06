@@ -42,10 +42,19 @@ class TestLowCardinalitySuggestion:
 
 
 class TestIndexSuggestion:
-    def test_analyzed_text_suggests_token_index(self):
+    def test_pure_text_suggests_text_index_with_tokenbf_fallback(self):
         field = EsField(path="message", es_type="text")
         suggestion = index_suggestion(field, IndexConfig())
-        assert suggestion is not None and "tokenbf_v1" in suggestion
+        assert suggestion is not None
+        assert "TYPE text(" in suggestion
+        assert "tokenbf_v1" in suggestion
+
+    def test_text_with_keyword_subfield_suggests_bloom_filter_not_full_text(self):
+        field = EsField(path="host", es_type="text", has_keyword_subfield=True)
+        suggestion = index_suggestion(field, IndexConfig())
+        assert suggestion is not None
+        assert "bloom_filter" in suggestion
+        assert "TYPE text(" not in suggestion
 
     def test_keyword_suggests_bloom_filter(self):
         suggestion = index_suggestion(_keyword("host"), IndexConfig())

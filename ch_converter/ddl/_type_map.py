@@ -49,10 +49,19 @@ _UNSIGNED_BOUNDS: tuple[tuple[str, int], ...] = (
 )
 
 
+_DATE_NANOS_PRECISION = 9
+
+
 def map_scalar(es_type: str, *, date_precision: int = 3) -> tuple[str, str | None]:
     """Return ``(clickhouse_type, warning)``. ``warning`` is set for unknowns."""
-    if es_type == "date" or es_type == "date_nanos":
+    if es_type == "date":
         return f"DateTime64({date_precision})", None
+    if es_type == "date_nanos":
+        # ES date_nanos is nanosecond-resolution; DateTime64(3) would truncate.
+        return f"DateTime64({_DATE_NANOS_PRECISION})", None
+    if es_type == "flattened":
+        # A flattened object coerces every leaf to a keyword string.
+        return "Map(String, String)", None
     mapped = _SCALAR_TYPES.get(es_type)
     if mapped is not None:
         return mapped, None

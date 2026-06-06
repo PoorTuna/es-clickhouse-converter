@@ -30,10 +30,16 @@ class TestMapScalar:
     def test_date_uses_precision(self):
         assert map_scalar("date", date_precision=6) == ("DateTime64(6)", None)
 
+    def test_date_nanos_keeps_nanosecond_precision(self):
+        assert map_scalar("date_nanos", date_precision=3) == ("DateTime64(9)", None)
+
+    def test_flattened_maps_to_string_map(self):
+        assert map_scalar("flattened") == ("Map(String, String)", None)
+
     def test_unknown_type_falls_back_to_string_with_warning(self):
-        mapped, warning = map_scalar("flattened")
+        mapped, warning = map_scalar("histogram")
         assert mapped == "String"
-        assert warning is not None and "flattened" in warning
+        assert warning is not None and "histogram" in warning
 
 
 class TestSupportsNullable:

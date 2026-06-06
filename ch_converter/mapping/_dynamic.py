@@ -17,6 +17,12 @@ def routes_to_json(node: dict[str, Any]) -> bool:
     return _is_dynamic_subtree(node) or node.get("enabled") is False
 
 
+def is_alias(node: dict[str, Any]) -> bool:
+    """True for an ES ``type: alias`` field - a pointer to another field that
+    stores no data of its own, so it yields no ClickHouse column."""
+    return node.get("type") == "alias"
+
+
 def is_nested(node: dict[str, Any]) -> bool:
     """True for an ES ``type: nested`` array-of-objects with a fixed schema.
 

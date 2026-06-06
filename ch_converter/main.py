@@ -1,4 +1,5 @@
 import os
+from importlib.metadata import PackageNotFoundError, version
 
 from fastapi import FastAPI
 
@@ -6,10 +7,19 @@ from ._logging import configure_logging
 from ._metrics import install_metrics
 from ._routes import register_routes
 
+
+def _package_version() -> str:
+    """Single source of truth is the package metadata (pyproject)."""
+    try:
+        return version("ch-converter")
+    except PackageNotFoundError:
+        return "0.0.0"
+
+
 # Must run before FastAPI/Instrumentator so all log records use our format.
 configure_logging()
 
-app = FastAPI(title="ES -> ClickHouse Schema Converter", version="0.5.0")
+app = FastAPI(title="ES -> ClickHouse Schema Converter", version=_package_version())
 install_metrics(app)
 register_routes(app)
 

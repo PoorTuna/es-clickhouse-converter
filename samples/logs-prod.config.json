@@ -10,7 +10,7 @@
   "low_cardinality": ["service.name", "level"],
   "counter_fields": ["bytes_total"],
   "indexes": [
-    { "name": "msg_tok", "expr": "message", "type": "tokenbf_v1(30720, 3, 0)", "granularity": 4 }
+    { "name": "msg_idx", "expr": "message", "type": "text(tokenizer = 'default')", "granularity": 1 }
   ],
   "materialized": { "status_class": "intDiv(status_code, 100)" }
 }

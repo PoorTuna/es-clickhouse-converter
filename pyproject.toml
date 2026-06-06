@@ -1,6 +1,6 @@
 [project]
 name = "ch-converter"
-version = "0.6.0"
+version = "0.7.0"
 description = "Deterministic offline Elasticsearch _mapping → ClickHouse DDL converter (FastAPI + CLI)"
 requires-python = ">=3.11"
 dependencies = [

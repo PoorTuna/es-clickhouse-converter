@@ -17,7 +17,14 @@ from ._optimizer import (
 from ._renderer import to_column_name
 from ._routing import ObjectRoute
 from ._table_model import Column, NestedColumn
-from ._type_map import is_integer, is_string, map_scalar, narrowest_int, supports_nullable
+from ._type_map import (
+    is_datetime,
+    is_integer,
+    is_string,
+    map_scalar,
+    narrowest_int,
+    supports_nullable,
+)
 
 
 def build_typed_columns(
@@ -43,6 +50,7 @@ def build_route_columns(
     """One column per non-flatten route, plus ``Array(...)`` columns for any
     nested array flattened by override. Object roots flattened by default flow
     through ``build_typed_columns`` instead."""
+    _add_route_advisories(routes, suggestions)
     columns: list[Column | NestedColumn] = [
         _build_json_column(route, config, warnings) for route in routes if route.strategy == "json"
     ]
@@ -58,7 +66,7 @@ def build_route_columns(
                 columns.append(nested)
     for route in routes:
         if route.strategy == "flatten" and route.source == "array":
-            columns += _build_array_flatten_columns(route, config, profile, warnings)
+            columns += _build_array_flatten_columns(route, config, profile, warnings, suggestions)
         elif route.strategy == "flatten" and route.detected and not route.leaves:
             warnings.append(
                 f"'{route.path}' was routed to flatten but has no scalar fields - skipped"
@@ -82,7 +90,7 @@ def _build_column(
     suggestions: list[str],
 ) -> Column:
     name = to_column_name(field.path)
-    base_type, overridden = _resolve_base_type(field, config, profile, warnings)
+    base_type, overridden = _resolve_base_type(field, config, profile, warnings, suggestions)
 
     nullable = _is_nullable(field, name, non_null) and supports_nullable(base_type)
     low_card = (
@@ -93,8 +101,7 @@ def _build_column(
     return Column(
         name=name,
         ch_type=_wrap_type(base_type, nullable=nullable, low_card=low_card),
-        codec=config.codec_overrides.get(field.path)
-        or default_codec(base_type, is_counter=field.path in config.counter_fields),
+        codec=_codec_for(field, base_type, config, warnings),
         default_expr=_default_expr(field.path, field.null_value, warnings),
     )
 
@@ -104,6 +111,7 @@ def _resolve_base_type(
     config: IndexConfig,
     profile: SampleProfile | None,
     warnings: list[str],
+    suggestions: list[str],
 ) -> tuple[str, bool]:
     override = config.type_overrides.get(field.path)
     if override is not None:
@@ -112,16 +120,75 @@ def _resolve_base_type(
     base_type, warning = map_scalar(field.es_type, date_precision=config.date_precision)
     if warning is not None:
         warnings.append(f"{field.path}: {warning}")
-    return _narrow_integer(base_type, field.path, profile), False
+    _warn_geo_point(field.path, base_type, warnings)
+    _warn_epoch_date_format(field, warnings)
+    return _narrow_integer(base_type, field.path, profile, suggestions), False
 
 
-def _narrow_integer(base_type: str, path: str, profile: SampleProfile | None) -> str:
+def _warn_epoch_date_format(field: EsField, warnings: list[str]) -> None:
+    date_format = field.date_format
+    if date_format and "epoch_" in date_format:
+        warnings.append(
+            f"{field.path}: date format '{date_format}' is epoch-based (numeric); "
+            f"DateTime64 expects datetimes - convert on load (e.g. "
+            f"fromUnixTimestamp64Milli) or store the raw number in an integer column"
+        )
+
+
+def _warn_geo_point(path: str, base_type: str, warnings: list[str]) -> None:
+    if base_type == "Point":
+        warnings.append(
+            f"{path}: geo_point maps to Point, which stores (lon, lat); ES uses "
+            f"(lat, lon) - swap the coordinates when loading"
+        )
+
+
+def _codec_for(
+    field: EsField, base_type: str, config: IndexConfig, warnings: list[str]
+) -> str:
+    override = config.codec_overrides.get(field.path)
+    if override is not None:
+        return override
+    is_counter = field.path in config.counter_fields
+    if is_counter and not (is_integer(base_type) or is_datetime(base_type)):
+        warnings.append(
+            f"{field.path}: marked as counter but maps to {base_type}; the Delta "
+            f"codec needs an integer/datetime type - using the default codec"
+        )
+        is_counter = False
+    return default_codec(base_type, is_counter=is_counter)
+
+
+def _narrow_integer(
+    base_type: str, path: str, profile: SampleProfile | None, suggestions: list[str]
+) -> str:
     if profile is None or not is_integer(base_type):
         return base_type
     sampled = profile.get(path)
     if sampled is None or sampled.min_value is None or sampled.max_value is None:
         return base_type
-    return narrowest_int(sampled.min_value, sampled.max_value)
+    narrowed = narrowest_int(sampled.min_value, sampled.max_value)
+    if narrowed != base_type:
+        suggestions.append(
+            f"'{path}' narrowed {base_type} -> {narrowed} from sample range "
+            f"[{sampled.min_value}, {sampled.max_value}]; widen the type if "
+            f"production values can exceed this (inserts overflow otherwise)"
+        )
+    return narrowed
+
+
+def _add_route_advisories(routes: list[ObjectRoute], suggestions: list[str]) -> None:
+    if any(route.strategy == "json" for route in routes):
+        suggestions.append(
+            "JSON columns need ClickHouse >= 24.8 (GA in 25.x); older servers "
+            "require SET allow_experimental_json_type = 1"
+        )
+    for route in routes:
+        if route.strategy == "map":
+            suggestions.append(
+                f"'{route.path}' routed to Map(String, ...); every value must share "
+                f"one type and keys must be unique per row, or inserts will fail"
+            )
 
 
 def _is_nullable(field: EsField, column_name: str, non_null: frozenset[str]) -> bool:
@@ -192,7 +259,7 @@ def _build_nested_route(
         warnings.append(f"'{route.path}' was routed to Nested but has no scalar fields - skipped")
         return None
     sub_columns = tuple(
-        _build_nested_subcolumn(field, route.path, config, profile, warnings)
+        _build_nested_subcolumn(field, route.path, config, profile, warnings, suggestions)
         for field in route.leaves
     )
     suggestions.append(f"'{route.path}' routed to Nested(...); query its rows with ARRAY JOIN")
@@ -200,7 +267,11 @@ def _build_nested_route(
 
 
 def _build_array_flatten_columns(
-    route: ObjectRoute, config: IndexConfig, profile: SampleProfile | None, warnings: list[str]
+    route: ObjectRoute,
+    config: IndexConfig,
+    profile: SampleProfile | None,
+    warnings: list[str],
+    suggestions: list[str],
 ) -> list[Column]:
     """A nested array flattened to parallel ``Array(T)`` columns - the Nested
     representation without the ``Nested`` sugar."""
@@ -210,7 +281,7 @@ def _build_array_flatten_columns(
     return [
         Column(
             name=to_column_name(field.path),
-            ch_type=f"Array({_leaf_ch_type(field, config, profile, warnings)})",
+            ch_type=f"Array({_leaf_ch_type(field, config, profile, warnings, suggestions)})",
         )
         for field in route.leaves
     ]
@@ -222,23 +293,28 @@ def _build_nested_subcolumn(
     config: IndexConfig,
     profile: SampleProfile | None,
     warnings: list[str],
+    suggestions: list[str],
 ) -> Column:
     relative_path = field.path[len(group_path) + 1 :]
-    base_type = _leaf_ch_type(field, config, profile, warnings)
+    base_type = _leaf_ch_type(field, config, profile, warnings, suggestions)
     nullable = field.null_value is None and supports_nullable(base_type)
     ch_type = f"Nullable({base_type})" if nullable else base_type
     return Column(name=to_column_name(relative_path), ch_type=ch_type)
 
 
 def _leaf_ch_type(
-    field: EsField, config: IndexConfig, profile: SampleProfile | None, warnings: list[str]
+    field: EsField,
+    config: IndexConfig,
+    profile: SampleProfile | None,
+    warnings: list[str],
+    suggestions: list[str],
 ) -> str:
     """A leaf's base type with the same sample-based integer narrowing applied
     to flat columns, so nested and flattened sub-columns stay consistent."""
     base_type = _leaf_base_type(field, config, warnings)
     if field.path in config.type_overrides:
         return base_type
-    return _narrow_integer(base_type, field.path, profile)
+    return _narrow_integer(base_type, field.path, profile, suggestions)
 
 
 def _leaf_base_type(field: EsField, config: IndexConfig, warnings: list[str]) -> str:
