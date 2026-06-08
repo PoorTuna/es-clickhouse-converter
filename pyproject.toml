@@ -1,6 +1,6 @@
 [project]
 name = "ch-converter"
-version = "0.8.0"
+version = "0.9.0"
 description = "Deterministic offline Elasticsearch _mapping → ClickHouse DDL converter (FastAPI + CLI)"
 requires-python = ">=3.11"
 dependencies = [
@@ -8,13 +8,13 @@ dependencies = [
     "uvicorn[standard]==0.34.2",
     "pydantic>=2.6",
     "prometheus-fastapi-instrumentator==7.0.2",
+    "httpx>=0.27",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=9.0",
     "pytest-cov>=6.0",
-    "httpx>=0.27",
     "ruff>=0.9",
     "mypy>=1.14",
     "pre-commit>=4.0",
@@ -31,8 +31,11 @@ build-backend = "setuptools.build_meta"
 include = ["ch_converter*"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests/unit"]
-addopts = "-vv --tb=short"
+testpaths = ["tests/unit", "tests/datatypes"]
+addopts = "-vv --tb=short -m 'not clickhouse'"
+markers = [
+    "clickhouse: live round-trip against docker ClickHouse (opt-in; deselected by default)",
+]
 
 [tool.ruff]
 line-length = 100
