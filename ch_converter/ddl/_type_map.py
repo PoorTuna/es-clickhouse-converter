@@ -11,8 +11,17 @@ _SCALAR_TYPES: dict[str, str] = {
     "keyword": "String",
     "text": "String",
     "match_only_text": "String",
+    "search_as_you_type": "String",
+    "annotated_text": "String",
+    "completion": "String",
+    "semantic_text": "String",
     "constant_keyword": "String",
     "wildcard": "String",
+    "token_count": "Int32",
+    "rank_feature": "Float32",
+    "rank_features": "Map(String, Float32)",
+    "sparse_vector": "Map(String, Float32)",
+    "dense_vector": "Array(Float32)",
     "long": "Int64",
     "integer": "Int32",
     "short": "Int16",
@@ -24,7 +33,7 @@ _SCALAR_TYPES: dict[str, str] = {
     "scaled_float": "Float64",
     "boolean": "UInt8",
     "ip": "IPv6",
-    "geo_point": "Point",
+    "geo_point": "Tuple(lat Float64, lon Float64)",
     "binary": "String",
     "version": "String",
 }
@@ -50,6 +59,20 @@ _UNSIGNED_BOUNDS: tuple[tuple[str, int], ...] = (
 
 
 _DATE_NANOS_PRECISION = 9
+
+# aggregate_metric_double sub-metrics -> CH type. value_count is a long count;
+# the rest are doubles. A named Tuple keeps the metrics addressable (t.max) and
+# lets JSONEachRow ingest the ES object form {"min":..,"max":..} directly.
+_AGG_METRIC_TYPES = {"min": "Float64", "max": "Float64", "sum": "Float64", "value_count": "UInt64"}
+
+
+def aggregate_metric_type(metrics: tuple[str, ...]) -> str | None:
+    """Named ``Tuple`` for an aggregate_metric_double, or ``None`` if it declared
+    no metrics (the caller then falls back)."""
+    if not metrics:
+        return None
+    parts = [f"{m} {_AGG_METRIC_TYPES.get(m, 'Float64')}" for m in metrics]
+    return f"Tuple({', '.join(parts)})"
 
 
 def map_scalar(es_type: str, *, date_precision: int = 3) -> tuple[str, str | None]:

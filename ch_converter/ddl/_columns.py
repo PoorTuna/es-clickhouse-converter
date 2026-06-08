@@ -18,6 +18,7 @@ from ._renderer import to_column_name
 from ._routing import ObjectRoute
 from ._table_model import Column, NestedColumn
 from ._type_map import (
+    aggregate_metric_type,
     is_datetime,
     is_integer,
     is_string,
@@ -117,10 +118,19 @@ def _resolve_base_type(
     if override is not None:
         return override, True
 
+    if field.es_type == "aggregate_metric_double":
+        agg = aggregate_metric_type(field.metrics)
+        if agg is None:
+            warnings.append(
+                f"{field.path}: aggregate_metric_double declared no 'metrics'; mapped to String"
+            )
+            return "String", False
+        return agg, False
+
     base_type, warning = map_scalar(field.es_type, date_precision=config.date_precision)
     if warning is not None:
         warnings.append(f"{field.path}: {warning}")
-    _warn_geo_point(field.path, base_type, warnings)
+    _warn_geo_point(field.path, field.es_type, warnings)
     _warn_epoch_date_format(field, warnings)
     return _narrow_integer(base_type, field.path, profile, suggestions), False
 
@@ -135,11 +145,13 @@ def _warn_epoch_date_format(field: EsField, warnings: list[str]) -> None:
         )
 
 
-def _warn_geo_point(path: str, base_type: str, warnings: list[str]) -> None:
-    if base_type == "Point":
+def _warn_geo_point(path: str, es_type: str, warnings: list[str]) -> None:
+    if es_type == "geo_point":
         warnings.append(
-            f"{path}: geo_point maps to Point, which stores (lon, lat); ES uses "
-            f"(lat, lon) - swap the coordinates when loading"
+            f"{path}: geo_point maps to Tuple(lat, lon) so the ES object form "
+            f"{{lat, lon}} ingests directly; for geo functions build a Point with "
+            f"Point({path}.lon, {path}.lat). The ES array form [lon, lat] would "
+            f"load with coordinates swapped"
         )
 
 

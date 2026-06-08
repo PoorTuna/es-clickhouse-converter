@@ -19,7 +19,7 @@ class TestGeoPointAdvisory:
 
         artifacts = _ddl_and_advisories(mapping)
 
-        assert "`loc` Point" in artifacts.ddl
+        assert "`loc` Tuple(lat Float64, lon Float64)" in artifacts.ddl
         assert any("geo_point" in warning and "lat" in warning for warning in artifacts.warnings)
 
 

@@ -214,7 +214,15 @@ def _build_field(path: str, node: dict[str, Any]) -> EsField:
         has_keyword_subfield=_has_keyword_subfield(node),
         date_format=node.get("format"),
         null_value=node.get("null_value"),
+        metrics=_metrics(node),
     )
+
+
+def _metrics(node: dict[str, Any]) -> tuple[str, ...]:
+    metrics = node.get("metrics")
+    if isinstance(metrics, list):
+        return tuple(m for m in metrics if isinstance(m, str))
+    return ()
 
 
 def _has_keyword_subfield(node: dict[str, Any]) -> bool:

@@ -23,6 +23,9 @@ class EsField:
     has_keyword_subfield: bool = False
     date_format: str | None = None
     null_value: Any = None
+    # Declared sub-metrics of an ``aggregate_metric_double`` field, in order
+    # (e.g. ``("min", "max", "sum", "value_count")``); empty for other types.
+    metrics: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
