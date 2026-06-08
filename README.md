@@ -49,6 +49,13 @@ uvicorn ch_converter.main:app   # or: python -m ch_converter.main
 - `POST /convert/bulk` → array, per-index failures isolated
 - `GET /health`, `GET /metrics`, OpenAPI docs at `/docs`
 
+Live Elasticsearch (session-only; connect, browse, import effective mappings):
+
+- `POST /es/connect` → `{ session_id, cluster_name, version }`
+- `GET /es/templates`, `GET /es/datastreams`, `GET /es/indices`
+- `GET /es/import?session_id=&kind=&name=` → `{ index_name, mapping, config_prefill, suggestions[] }`
+- `POST /es/disconnect`
+
 The API and CLI share one orchestrator (`ch_converter.conversion.convert_index`),
 so they always emit identical DDL. A frontend can be built against `/convert`.
 

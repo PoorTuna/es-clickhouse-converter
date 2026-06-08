@@ -7,9 +7,9 @@ description: >-
 type: application
 
 # Chart version is independent of the app. appVersion tracks the container
-# images (backend + UI share tag 0.7.0).
-version: 0.1.5
-appVersion: "0.7.0"
+# images (backend + UI share tag 0.9.0).
+version: 0.1.6
+appVersion: "0.9.0"
 
 kubeVersion: ">=1.21.0-0"
 
