@@ -178,8 +178,9 @@ def _narrow_integer(
 def _add_route_advisories(routes: list[ObjectRoute], suggestions: list[str]) -> None:
     if any(route.strategy == "json" for route in routes):
         suggestions.append(
-            "JSON columns need ClickHouse >= 24.8 (GA in 25.x); older servers "
-            "require SET allow_experimental_json_type = 1"
+            "JSON columns are production-ready in ClickHouse >= 25.3; on earlier "
+            "servers (>= 24.8) the type is experimental and needs "
+            "SET allow_experimental_json_type = 1"
         )
     for route in routes:
         if route.strategy == "map":
@@ -297,7 +298,10 @@ def _build_nested_subcolumn(
     base_type = _leaf_ch_type(field, config, profile, warnings, suggestions)
     nullable = field.null_value is None and supports_nullable(base_type)
     ch_type = f"Nullable({base_type})" if nullable else base_type
-    return Column(name=to_column_name(relative_path), ch_type=ch_type)
+    # Keep the dotted relative path: ClickHouse Nested addresses a multi-level
+    # leaf as `headers.http`, matching how JSONEachRow populates it. Flattening
+    # to `headers_http` would break that mapping.
+    return Column(name=relative_path, ch_type=ch_type)
 
 
 def _leaf_ch_type(

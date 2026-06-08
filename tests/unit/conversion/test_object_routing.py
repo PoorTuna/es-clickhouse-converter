@@ -152,6 +152,94 @@ class TestDetectedJsonOverride:
         assert "`product` JSON(logs String, eventtype Int32)" in ddl
 
 
+class TestNestedPathHoisting:
+    """A route detected or pinned at a nested path is hoisted to its top-level ES
+    key so re-ingesting the original JSON populates it; sibling leaves fold in."""
+
+    def test_detected_dynamic_subobject_hoists_and_folds_sibling(self):
+        mapping = {
+            "properties": {
+                "@timestamp": {"type": "date"},
+                "product": {
+                    "properties": {
+                        "headers": {
+                            "type": "object",
+                            "dynamic": "true",
+                            "properties": {"http": {"type": "keyword"}},
+                        },
+                        "name": {"type": "keyword"},
+                    }
+                },
+            }
+        }
+        ddl = convert_index("logs", mapping, _BASE).ddl
+        assert "`product` JSON(" in ddl
+        assert "headers.http String" in ddl
+        assert "name String" in ddl
+        assert "`product_headers`" not in ddl
+        assert "`product_name`" not in ddl
+
+    def test_explicit_pin_at_nested_path_hoists_to_top_level(self):
+        mapping = {
+            "properties": {
+                "@timestamp": {"type": "date"},
+                "product": {
+                    "properties": {
+                        "headers": {"properties": {"http": {"type": "keyword"}}},
+                        "name": {"type": "keyword"},
+                    }
+                },
+            }
+        }
+        ddl = convert_index("logs", mapping, {**_BASE, "json_fields": ["product.headers"]}).ddl
+        assert "`product` JSON(headers.http String, name String)" in ddl
+        assert "`product_headers`" not in ddl
+        assert "`product_name`" not in ddl
+
+    def test_nested_route_keeps_dotted_subcolumn_name(self):
+        mapping = {
+            "properties": {
+                "@timestamp": {"type": "date"},
+                "tags": {
+                    "type": "nested",
+                    "properties": {"meta": {"properties": {"http": {"type": "keyword"}}}},
+                },
+            }
+        }
+        ddl = convert_index("logs", mapping, _BASE).ddl
+        assert "`meta.http`" in ddl
+        assert "`meta_http`" not in ddl
+
+    def test_conflicting_strategies_under_one_key_let_json_win(self):
+        mapping = {
+            "properties": {
+                "@timestamp": {"type": "date"},
+                "product": {
+                    "properties": {
+                        "headers": {
+                            "type": "object",
+                            "dynamic": "true",
+                            "properties": {"http": {"type": "keyword"}},
+                        },
+                        "meta": {"type": "nested", "properties": {"sku": {"type": "keyword"}}},
+                    }
+                },
+            }
+        }
+        artifacts = convert_index("logs", mapping, _BASE)
+        assert "`product` JSON" in artifacts.ddl
+        assert "`product` Nested(" not in artifacts.ddl
+        assert any("product.meta" in w and "folded" in w for w in artifacts.warnings)
+
+    def test_order_by_on_a_folded_subpath_warns(self):
+        artifacts = convert_index(
+            "logs", _MAPPING, {"json_fields": ["product"], "order_by": ["product.logs"]}
+        )
+        assert any(
+            "product_logs" in w and "not an emitted column" in w for w in artifacts.warnings
+        )
+
+
 _NESTED_MAPPING = {
     "properties": {
         "@timestamp": {"type": "date"},

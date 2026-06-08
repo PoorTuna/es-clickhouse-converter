@@ -2,7 +2,11 @@
 
 Detected defaults (``json`` for dynamic subtrees, ``nested`` for ES nested
 arrays) and explicit per-root config are collapsed here so no root is ever
-emitted as two columns. The DDL builder consumes the resulting routes.
+emitted as two columns. Object routes are then hoisted to their top-level ES
+key: ClickHouse maps a top-level JSON input key to one column, so a route
+detected or pinned at a nested path (``product.headers``) must own the whole
+``product`` subtree as a single column - otherwise re-ingesting the original
+document never populates it. The DDL builder consumes the resulting routes.
 """
 
 from dataclasses import dataclass
@@ -55,7 +59,7 @@ def resolve_object_routes(
                 map_value_type=map_values.get(path),
             )
         )
-    return routes
+    return _hoist_to_top_level(mapping, routes, warnings)
 
 
 def typed_fields_for_routes(
@@ -130,3 +134,91 @@ def _honor_strategy(
 
 def _plain_leaves(mapping: MappingModel, root: str) -> tuple[EsField, ...]:
     return tuple(field for field in mapping.fields if field.path.startswith(f"{root}."))
+
+
+_STRATEGY_PRECEDENCE = {"json": 0, "nested": 1, "map": 2}
+
+
+def _hoist_to_top_level(
+    mapping: MappingModel, routes: list[ObjectRoute], warnings: list[str]
+) -> list[ObjectRoute]:
+    """Re-root every object route at its top-level ES key, merging routes that
+    share one. Flatten routes pass through untouched (they stay scalar columns
+    and are out of scope for the top-level-key rule)."""
+    passthrough = [route for route in routes if route.strategy == "flatten"]
+
+    groups: dict[str, list[ObjectRoute]] = {}
+    for route in routes:
+        if route.strategy != "flatten":
+            groups.setdefault(_top_level_key(route.path), []).append(route)
+
+    merged = [_merge_group(mapping, top, members, warnings) for top, members in groups.items()]
+    return merged + passthrough
+
+
+def _merge_group(
+    mapping: MappingModel, top: str, members: list[ObjectRoute], warnings: list[str]
+) -> ObjectRoute:
+    winner = min((member.strategy for member in members), key=_STRATEGY_PRECEDENCE.__getitem__)
+    _warn_folded(top, winner, members, warnings)
+    return ObjectRoute(
+        path=top,
+        strategy=winner,
+        leaves=_all_leaves_under(mapping, top, members),
+        # An ES nested array keeps its array-ness so JSON stays bare (scalar path
+        # hints would misrepresent its array leaves); plain objects emit hints.
+        source="array" if any(member.source == "array" for member in members) else "object",
+        detected=_detected_for(top, mapping),
+        map_value_type=_map_value_for(winner, members),
+    )
+
+
+def _warn_folded(
+    top: str, winner: str, members: list[ObjectRoute], warnings: list[str]
+) -> None:
+    for member in members:
+        if member.strategy != winner and member.path != top:
+            warnings.append(
+                f"'{member.path}' ({member.strategy}) folded into top-level column "
+                f"'{top}' as {winner}; ClickHouse maps the top-level key '{top}' to "
+                f"one column"
+            )
+
+
+def _all_leaves_under(
+    mapping: MappingModel, top: str, members: list[ObjectRoute]
+) -> tuple[EsField, ...]:
+    """Every scalar leaf under ``top``, deduped by path, first-seen order. The
+    top key itself is never a leaf, so a property-less object stays empty and is
+    skipped downstream."""
+    prefix = f"{top}."
+    leaves: dict[str, EsField] = {}
+    sources = [mapping.fields]
+    sources += [root.fields for root in mapping.json_roots]
+    sources += [group.fields for group in mapping.nested_groups]
+    sources += [member.leaves for member in members]
+    for fields in sources:
+        for field in fields:
+            if field.path.startswith(prefix):
+                leaves.setdefault(field.path, field)
+    return tuple(leaves.values())
+
+
+def _map_value_for(winner: str, members: list[ObjectRoute]) -> str | None:
+    if winner != "map":
+        return None
+    return next(
+        (member.map_value_type for member in members if member.map_value_type is not None), None
+    )
+
+
+def _detected_for(top: str, mapping: MappingModel) -> str | None:
+    if any(root.path == top for root in mapping.json_roots):
+        return "json"
+    if any(group.path == top for group in mapping.nested_groups):
+        return "nested"
+    return None
+
+
+def _top_level_key(path: str) -> str:
+    return path.split(".", 1)[0]

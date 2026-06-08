@@ -6,9 +6,11 @@ services:
     environment:
       LOG_LEVEL: INFO
 
-  # Optional local ClickHouse for dry-running generated DDL.
+  # Optional local ClickHouse for dry-running generated DDL. 25.3+ has the JSON
+  # type production-ready (experimental on 24.8), so generated JSON columns work
+  # without SET allow_experimental_json_type.
   clickhouse:
-    image: clickhouse/clickhouse-server:24.8
+    image: clickhouse/clickhouse-server:26.3.7
     ports:
       - "8123:8123"
       - "9000:9000"

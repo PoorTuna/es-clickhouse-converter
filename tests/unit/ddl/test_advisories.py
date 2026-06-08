@@ -132,7 +132,10 @@ class TestRouteAdvisories:
 
         artifacts = _ddl_and_advisories(mapping)
 
-        assert any("24.8" in suggestion for suggestion in artifacts.suggestions)
+        assert any(
+            "25.3" in suggestion and "allow_experimental_json_type" in suggestion
+            for suggestion in artifacts.suggestions
+        )
 
     def test_map_route_warns_about_homogeneous_values(self):
         mapping = {
