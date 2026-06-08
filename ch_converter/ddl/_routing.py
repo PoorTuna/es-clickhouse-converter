@@ -173,9 +173,7 @@ def _merge_group(
     )
 
 
-def _warn_folded(
-    top: str, winner: str, members: list[ObjectRoute], warnings: list[str]
-) -> None:
+def _warn_folded(top: str, winner: str, members: list[ObjectRoute], warnings: list[str]) -> None:
     for member in members:
         if member.strategy != winner and member.path != top:
             warnings.append(

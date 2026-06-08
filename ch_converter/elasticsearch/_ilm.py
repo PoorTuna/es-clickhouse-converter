@@ -44,8 +44,7 @@ def _delete_suggestions(phases: Mapping[str, Any], column: str) -> list[str]:
     if interval is None:
         return [f"ES ILM deletes data after {min_age}; consider a ClickHouse TTL on {column}."]
     return [
-        f"ES ILM deletes after {min_age}; "
-        f"add `TTL {column} + INTERVAL {interval}` in ClickHouse."
+        f"ES ILM deletes after {min_age}; add `TTL {column} + INTERVAL {interval}` in ClickHouse."
     ]
 
 
@@ -60,8 +59,7 @@ def _rollover_suggestions(phases: Mapping[str, Any]) -> list[str]:
     )
     detail = f" (ES rolls over at {bound})" if bound else ""
     return [
-        f"ES ILM rolls indices over{detail}; "
-        "pick a PARTITION BY granularity to bound part size."
+        f"ES ILM rolls indices over{detail}; pick a PARTITION BY granularity to bound part size."
     ]
 
 

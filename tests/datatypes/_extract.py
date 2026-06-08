@@ -29,7 +29,7 @@ def _column_block(ddl: str) -> str:
         elif ch == ")":
             depth -= 1
             if depth == 0:
-                return ddl[start + 1:i]
+                return ddl[start + 1 : i]
     raise ValueError("unbalanced parentheses in DDL")
 
 

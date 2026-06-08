@@ -4,7 +4,6 @@ These do not resolve to a single scalar core type, so each is checked against
 its faithful structural outcome rather than the scalar table.
 """
 
-
 from _extract import column_type, column_types
 from _findings import check_absent
 from _folds import Case, top_level

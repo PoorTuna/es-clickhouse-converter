@@ -64,8 +64,14 @@ class ExecTransport:
 
     def run(self, sql: str, stdin: str | None = None) -> str:
         cmd = [
-            "docker", "exec", "-i", self._container, "clickhouse-client",
-            "--date_time_input_format=best_effort", "--query", sql,
+            "docker",
+            "exec",
+            "-i",
+            self._container,
+            "clickhouse-client",
+            "--date_time_input_format=best_effort",
+            "--query",
+            sql,
         ]
         proc = subprocess.run(
             cmd,

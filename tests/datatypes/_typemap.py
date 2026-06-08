@@ -122,9 +122,7 @@ GROUND_TRUTH: dict[str, Expectation] = {
         judgment=True,
         note="GeoJSON/WKT geometry",
     ),
-    "shape": Expectation(
-        "shape", (r"String", r"Ring", r"Polygon", r"MultiPolygon"), judgment=True
-    ),
+    "shape": Expectation("shape", (r"String", r"Ring", r"Polygon", r"MultiPolygon"), judgment=True),
     # vector / ranking
     "dense_vector": Expectation("dense_vector", (r"Array\(Float32\)", r"Array\(Float64\)")),
     "sparse_vector": Expectation(
@@ -205,6 +203,6 @@ def core_of(rendered_type: str) -> str:
         for wrapper in ("Nullable", "LowCardinality"):
             prefix = f"{wrapper}("
             if core.startswith(prefix) and core.endswith(")"):
-                core = core[len(prefix):-1].strip()
+                core = core[len(prefix) : -1].strip()
                 changed = True
     return core

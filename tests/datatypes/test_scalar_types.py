@@ -7,13 +7,25 @@ from _run import rendered
 from _typemap import GROUND_TRUTH
 
 NUMERIC = [
-    "byte", "short", "integer", "long", "unsigned_long",
-    "float", "half_float", "double", "scaled_float",
+    "byte",
+    "short",
+    "integer",
+    "long",
+    "unsigned_long",
+    "float",
+    "half_float",
+    "double",
+    "scaled_float",
 ]
 KEYWORD_FAMILY = ["keyword", "constant_keyword", "wildcard"]
 TEXT_FAMILY = [
-    "text", "match_only_text", "search_as_you_type",
-    "annotated_text", "completion", "semantic_text", "token_count",
+    "text",
+    "match_only_text",
+    "search_as_you_type",
+    "annotated_text",
+    "completion",
+    "semantic_text",
+    "token_count",
 ]
 OTHER_SCALAR = ["boolean", "binary", "ip", "version", "murmur3"]
 

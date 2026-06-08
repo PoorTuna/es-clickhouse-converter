@@ -235,9 +235,7 @@ class TestNestedPathHoisting:
         artifacts = convert_index(
             "logs", _MAPPING, {"json_fields": ["product"], "order_by": ["product.logs"]}
         )
-        assert any(
-            "product_logs" in w and "not an emitted column" in w for w in artifacts.warnings
-        )
+        assert any("product_logs" in w and "not an emitted column" in w for w in artifacts.warnings)
 
 
 _NESTED_MAPPING = {

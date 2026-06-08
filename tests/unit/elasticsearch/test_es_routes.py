@@ -1,4 +1,3 @@
-import pytest
 from fastapi.testclient import TestClient
 
 from ch_converter.elasticsearch import _client as client_module

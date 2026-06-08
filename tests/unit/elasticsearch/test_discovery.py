@@ -45,7 +45,12 @@ class TestListIndices:
         client = FakeClient(
             get={
                 "/_cat/indices": [
-                    {"index": "logs-000001", "health": "green", "docs.count": "42", "store.size": "1mb"},
+                    {
+                        "index": "logs-000001",
+                        "health": "green",
+                        "docs.count": "42",
+                        "store.size": "1mb",
+                    },
                     {"index": ".kibana", "health": "green", "docs.count": "1", "store.size": "1kb"},
                 ]
             }
@@ -111,7 +116,11 @@ class TestImportTemplate:
     def test_uses_simulate_endpoint(self):
         mappings = {"properties": {"@timestamp": {"type": "date"}}}
         client = FakeClient(
-            post={"/_index_template/_simulate/logs": {"template": {"mappings": mappings, "settings": {}}}}
+            post={
+                "/_index_template/_simulate/logs": {
+                    "template": {"mappings": mappings, "settings": {}}
+                }
+            }
         )
         result = asyncio.run(discovery.import_item(client, "template", "logs"))
         assert result.mapping == {"mappings": mappings}
